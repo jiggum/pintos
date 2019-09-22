@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Sleeping threads */
+static struct list sleep_list;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -92,6 +95,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -582,3 +586,45 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+static bool
+less_func_release_tick (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  const struct thread *tl = list_entry(left, struct thread, elem);
+  const struct thread *tr = list_entry(right, struct thread, elem);
+
+  if (tl -> release_tick == tr -> release_tick)
+    return tl -> priority > tr -> priority;
+
+  return tl -> release_tick < tr -> release_tick;
+}
+
+void
+thread_sleep (int64_t ticks)
+{
+  enum intr_level old_level;
+  struct thread *current_thread;
+  old_level = intr_disable();
+  current_thread = thread_current();
+  current_thread-> release_tick = ticks;
+  if (current_thread != idle_thread)
+    list_insert_ordered(&sleep_list, &current_thread -> elem, less_func_release_tick, NULL);
+  thread_block();
+  intr_set_level(old_level);
+}
+
+void
+thread_release (int64_t ticks) {
+  struct list_elem *e;
+  struct thread *t;
+  e = list_begin(&sleep_list);
+
+  while (e != list_end(&sleep_list)) {
+    t = list_entry(e, struct thread, elem);
+    if (ticks >= t -> release_tick) {
+      e = list_remove(&t -> elem);
+      thread_unblock(t);
+    } else {
+      break;
+    }
+  }
+}
