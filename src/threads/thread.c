@@ -73,6 +73,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static bool compare_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
+static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -588,12 +590,19 @@ allocate_tid (void)
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 static bool
-less_func_release_tick (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+compare_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  const struct thread *tl = list_entry(left, struct thread, elem);
+  const struct thread *tr = list_entry(right, struct thread, elem);
+  return tl -> priority > tr -> priority;
+}
+
+static bool
+compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
   const struct thread *tl = list_entry(left, struct thread, elem);
   const struct thread *tr = list_entry(right, struct thread, elem);
 
   if (tl -> release_tick == tr -> release_tick)
-    return tl -> priority > tr -> priority;
+    return compare_priority_high(left, right, NULL);
 
   return tl -> release_tick < tr -> release_tick;
 }
@@ -607,7 +616,7 @@ thread_sleep (int64_t ticks)
   current_thread = thread_current();
   current_thread-> release_tick = ticks;
   if (current_thread != idle_thread)
-    list_insert_ordered(&sleep_list, &current_thread -> elem, less_func_release_tick, NULL);
+    list_insert_ordered(&sleep_list, &current_thread -> elem, compare_release_tick_low, NULL);
   thread_block();
   intr_set_level(old_level);
 }
