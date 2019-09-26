@@ -73,7 +73,6 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-static bool compare_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 
 /* Initializes the threading system by transforming the code
@@ -477,6 +476,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->priority_before_donation = EMPTY_PRIORITY;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -507,8 +507,11 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    list_sort(&ready_list, compare_priority_high, NULL);
+    return list_entry(list_pop_front(&ready_list),
+    struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -598,7 +601,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-static bool
+bool
 compare_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
   const struct thread *tl = list_entry(left, struct thread, elem);
   const struct thread *tr = list_entry(right, struct thread, elem);

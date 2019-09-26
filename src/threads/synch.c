@@ -32,6 +32,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static void priority_donation (struct lock *lock);
+static void rollback_priority (struct thread *thread);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -68,7 +71,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+      list_insert_ordered(&sema->waiters, &thread_current ()->elem, compare_priority_high, NULL);
       thread_block ();
     }
   sema->value--;
@@ -113,9 +116,14 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters)) {
+    list_sort(&sema->waiters, compare_priority_high, NULL);
+    thread_unblock(list_entry(
+      list_pop_front(&sema->waiters),
+      struct thread,
+      elem
+    ));
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -192,12 +200,19 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  struct thread *current_thread;
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  current_thread = thread_current();
+
+  priority_donation(lock);
+  current_thread->waiting_lock = lock;
   sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  current_thread->waiting_lock = NULL;
+  lock->holder = current_thread;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -231,8 +246,12 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  struct thread *holder = lock->holder;
+
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+  rollback_priority(holder);
+  thread_yield();
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -335,4 +354,37 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
+}
+
+static void
+priority_donation (struct lock *lock)
+{
+  struct thread *current_thread = thread_current();
+  struct lock *next_lock;
+
+  if (
+    lock == NULL ||
+    lock->holder == NULL ||
+    lock->holder->priority >= current_thread->priority
+  )
+    return;
+
+  lock->holder->priority_before_donation = lock->holder->priority;
+  lock->holder->priority = current_thread->priority;
+
+  next_lock = lock->holder->waiting_lock;
+  if (next_lock != NULL) {
+    priority_donation(next_lock);
+  }
+}
+
+static void
+rollback_priority (struct thread *thread)
+{
+  ASSERT (thread != NULL);
+  if (thread->priority_before_donation < 0)
+    return;
+
+  thread->priority = thread->priority_before_donation;
+  thread->priority_before_donation = EMPTY_PRIORITY;
 }
