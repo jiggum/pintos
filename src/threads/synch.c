@@ -33,6 +33,9 @@
 #include "threads/thread.h"
 
 static void priority_donation (struct lock *lock);
+static int get_highest_priority_from_lock(struct lock *lock);
+static int get_highest_priority_from_locks(struct list *list);
+
 static void rollback_priority (struct thread *thread);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -208,11 +211,11 @@ lock_acquire (struct lock *lock)
 
   current_thread = thread_current();
 
-  priority_donation(lock);
   current_thread->waiting_lock = lock;
+  priority_donation(lock);
   sema_down (&lock->semaphore);
-  current_thread->waiting_lock = NULL;
   lock->holder = current_thread;
+  list_push_back (&current_thread->locks, &lock->lock_elem);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -246,11 +249,11 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  struct thread *holder = lock->holder;
-
+  list_remove(&lock->lock_elem);
+  rollback_priority(lock->holder);
+  lock->holder->waiting_lock = NULL;
   lock->holder = NULL;
   sema_up (&lock->semaphore);
-  rollback_priority(holder);
   thread_yield();
 }
 
@@ -369,7 +372,8 @@ priority_donation (struct lock *lock)
   )
     return;
 
-  lock->holder->priority_before_donation = lock->holder->priority;
+  if (lock->holder->priority_before_donation == EMPTY_PRIORITY)
+    lock->holder->priority_before_donation = lock->holder->priority;
   lock->holder->priority = current_thread->priority;
 
   next_lock = lock->holder->waiting_lock;
@@ -378,13 +382,63 @@ priority_donation (struct lock *lock)
   }
 }
 
+static int
+get_highest_priority_from_waiters(struct list *list)
+{
+  ASSERT (list != NULL);
+
+  struct list_elem *cur;
+  struct thread *thread;
+  int highest_priority = EMPTY_PRIORITY;
+  for(cur = list_begin(list); cur != list_end(list); cur = list_next(cur)) {
+    thread = list_entry(cur, struct thread, elem);
+    if (highest_priority < thread->priority)
+      highest_priority = thread->priority;
+  }
+  return highest_priority;
+}
+
+static int
+get_highest_priority_from_locks(struct list *list)
+{
+  ASSERT (list != NULL);
+
+  struct list_elem *cur;
+  struct lock *lock;
+  int next_priority;
+  int highest_priority = EMPTY_PRIORITY;
+  for(cur = list_begin(list); cur != list_end(list); cur = list_next(cur)) {
+    lock = list_entry(cur, struct lock, lock_elem);
+    next_priority = get_highest_priority_from_waiters(&lock->semaphore.waiters);
+    if (highest_priority < next_priority)
+      highest_priority = next_priority;
+  }
+
+  return highest_priority;
+}
+
 static void
 rollback_priority (struct thread *thread)
 {
   ASSERT (thread != NULL);
-  if (thread->priority_before_donation < 0)
-    return;
+  int next_priority = EMPTY_PRIORITY;
+  if (!list_empty(&thread->locks)) {
+    next_priority = get_highest_priority_from_locks(&thread->locks);
+  }
 
-  thread->priority = thread->priority_before_donation;
-  thread->priority_before_donation = EMPTY_PRIORITY;
+  if (
+    (
+      next_priority == EMPTY_PRIORITY ||
+      next_priority <= thread->priority_before_donation
+    ) && thread->priority_before_donation != EMPTY_PRIORITY
+  ) {
+    thread->priority = thread->priority_before_donation;
+    thread->priority_before_donation = EMPTY_PRIORITY;
+    return;
+  }
+
+  if (next_priority != EMPTY_PRIORITY) {
+    thread->priority = next_priority;
+    return;
+  }
 }
