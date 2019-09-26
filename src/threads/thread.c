@@ -646,3 +646,15 @@ thread_release (int64_t ticks) {
     }
   }
 }
+
+void print_thread_list(struct list *list)
+{
+  struct list_elem *cur;
+  struct thread *thread;
+  printf("\n------------------------\n");
+  for(cur = list_begin(list); cur != list_end(list); cur = list_next(cur)) {
+    thread = list_entry(cur, struct thread, elem);
+    printf("%s priority: %d", thread->name, thread->priority);
+  }
+  printf("\n------------------------\n");
+}
