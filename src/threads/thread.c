@@ -607,8 +607,8 @@ compare_priority_high (const struct list_elem *left, const struct list_elem *rig
 
 static bool
 compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
-  const struct thread *tl = list_entry(left, struct thread, elem);
-  const struct thread *tr = list_entry(right, struct thread, elem);
+  const struct thread *tl = list_entry(left, struct thread, sleep_elem);
+  const struct thread *tr = list_entry(right, struct thread, sleep_elem);
 
   if (tl -> release_tick == tr -> release_tick)
     return compare_priority_high(left, right, NULL);
@@ -625,7 +625,7 @@ thread_sleep (int64_t ticks)
   current_thread = thread_current();
   current_thread-> release_tick = ticks;
   if (current_thread != idle_thread)
-    list_insert_ordered(&sleep_list, &current_thread -> elem, compare_release_tick_low, NULL);
+    list_insert_ordered(&sleep_list, &current_thread -> sleep_elem, compare_release_tick_low, NULL);
   thread_block();
   intr_set_level(old_level);
 }
@@ -637,9 +637,9 @@ thread_release (int64_t ticks) {
   e = list_begin(&sleep_list);
 
   while (e != list_end(&sleep_list)) {
-    t = list_entry(e, struct thread, elem);
+    t = list_entry(e, struct thread, sleep_elem);
     if (ticks >= t -> release_tick) {
-      e = list_remove(&t -> elem);
+      e = list_remove(&t -> sleep_elem);
       thread_unblock(t);
     } else {
       break;
