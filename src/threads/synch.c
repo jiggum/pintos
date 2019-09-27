@@ -34,9 +34,6 @@
 
 static void priority_donation (struct lock *lock);
 static int get_highest_priority_from_waiters(struct list *list);
-static int get_highest_priority_from_locks(struct list *list);
-
-static void rollback_priority (struct thread *thread);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -250,11 +247,10 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   list_remove(&lock->lock_elem);
-  rollback_priority(lock->holder);
   lock->holder->waiting_lock = NULL;
   lock->holder = NULL;
   sema_up (&lock->semaphore);
-  thread_yield();
+  rollback_priority();
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -398,7 +394,7 @@ get_highest_priority_from_waiters(struct list *list)
   return highest_priority;
 }
 
-static int
+int
 get_highest_priority_from_locks(struct list *list)
 {
   ASSERT (list != NULL);
@@ -415,30 +411,4 @@ get_highest_priority_from_locks(struct list *list)
   }
 
   return highest_priority;
-}
-
-static void
-rollback_priority (struct thread *thread)
-{
-  ASSERT (thread != NULL);
-  int next_priority = EMPTY_PRIORITY;
-  if (!list_empty(&thread->locks)) {
-    next_priority = get_highest_priority_from_locks(&thread->locks);
-  }
-
-  if (
-    (
-      next_priority == EMPTY_PRIORITY ||
-      next_priority <= thread->priority_before_donation
-    ) && thread->priority_before_donation != EMPTY_PRIORITY
-  ) {
-    thread->priority = thread->priority_before_donation;
-    thread->priority_before_donation = EMPTY_PRIORITY;
-    return;
-  }
-
-  if (next_priority != EMPTY_PRIORITY) {
-    thread->priority = next_priority;
-    return;
-  }
 }

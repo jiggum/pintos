@@ -154,4 +154,6 @@ bool compare_priority_high (const struct list_elem *left, const struct list_elem
 
 void print_thread_list(struct list *list);
 
+void rollback_priority (void);
+
 #endif /* threads/thread.h */

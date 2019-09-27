@@ -662,3 +662,31 @@ void print_thread_list(struct list *list)
   }
   printf("\n------------------------\n");
 }
+
+void
+rollback_priority (void)
+{
+  struct thread *current_thread = thread_current();
+  ASSERT (current_thread != NULL);
+
+  int next_priority = EMPTY_PRIORITY;
+  if (!list_empty(&current_thread->locks)) {
+    next_priority = get_highest_priority_from_locks(&current_thread->locks);
+  }
+
+  if (
+    (
+      next_priority == EMPTY_PRIORITY ||
+      next_priority <= current_thread->priority_before_donation
+    ) && current_thread->priority_before_donation != EMPTY_PRIORITY
+    ) {
+    thread_set_priority(current_thread->priority_before_donation);
+    current_thread->priority_before_donation = EMPTY_PRIORITY;
+    return;
+  }
+
+  if (next_priority != EMPTY_PRIORITY) {
+    thread_set_priority(next_priority);
+    return;
+  }
+}
