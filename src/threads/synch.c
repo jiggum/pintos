@@ -33,7 +33,7 @@
 #include "threads/thread.h"
 
 static void priority_donation (struct lock *lock);
-static int get_highest_priority_from_lock(struct lock *lock);
+static int get_highest_priority_from_waiters(struct list *list);
 static int get_highest_priority_from_locks(struct list *list);
 
 static void rollback_priority (struct thread *thread);
