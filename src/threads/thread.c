@@ -74,6 +74,7 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
+static void thread_set_priority_silly (int);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -341,15 +342,32 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+static void
+thread_set_priority_silly(int new_priority)
+{
+  struct thread *cur = thread_current ();
+  int old_priority = cur->priority;
+
+  cur->priority = new_priority;
+
+  if (old_priority > cur->priority) {
+    thread_yield();
+  }
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
   struct thread *cur = thread_current ();
   int old_priority = cur->priority;
-  cur->priority = new_priority;
 
-  if (old_priority > new_priority) {
+  if (cur -> priority_before_donation != EMPTY_PRIORITY)
+    cur->priority_before_donation = new_priority;
+  else
+    cur->priority = new_priority;
+
+  if (old_priority > cur->priority) {
     thread_yield();
   }
 }
@@ -681,14 +699,15 @@ rollback_priority (void)
       next_priority == EMPTY_PRIORITY ||
       next_priority <= current_thread->priority_before_donation
     ) && current_thread->priority_before_donation != EMPTY_PRIORITY
-    ) {
-    thread_set_priority(current_thread->priority_before_donation);
+  ) {
+    next_priority = current_thread->priority_before_donation;
     current_thread->priority_before_donation = EMPTY_PRIORITY;
+    thread_set_priority_silly(next_priority);
     return;
   }
 
   if (next_priority != EMPTY_PRIORITY) {
-    thread_set_priority(next_priority);
+    thread_set_priority_silly(next_priority);
     return;
   }
 }
