@@ -34,6 +34,7 @@
 
 static void priority_donation (struct lock *lock);
 static int get_highest_priority_from_waiters(struct list *list);
+static bool compare_cond_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -313,7 +314,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
   
   sema_init (&waiter.semaphore, 0);
-  list_push_back (&cond->waiters, &waiter.elem);
+  list_insert_ordered(&cond->waiters, &waiter.elem, compare_cond_priority_high, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -334,9 +335,13 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+  if (!list_empty (&cond->waiters)) {
+    list_sort(&cond->waiters, compare_cond_priority_high, NULL);
+    sema_up(
+      &list_entry(list_pop_front(&cond->waiters),
+      struct semaphore_elem, elem)->semaphore
+    );
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -411,4 +416,13 @@ get_highest_priority_from_locks(struct list *list)
   }
 
   return highest_priority;
+}
+
+static bool
+compare_cond_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  struct semaphore_elem *se_l = list_entry(left, struct semaphore_elem, elem);
+  struct semaphore_elem *se_r = list_entry(right, struct semaphore_elem, elem);
+  int p_l = get_highest_priority_from_waiters(&se_l->semaphore.waiters);
+  int p_r = get_highest_priority_from_waiters(&se_r->semaphore.waiters);
+  return p_l > p_r;
 }
