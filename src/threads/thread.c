@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Sleeping threads */
+static struct list sleep_list;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -70,6 +73,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
+static void thread_set_priority_silly (int);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -92,6 +97,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -237,8 +243,13 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t -> elem, compare_priority_high, NULL);
   t->status = THREAD_READY;
+  if (
+    t->priority > thread_get_priority() &&
+    thread_current() != idle_thread
+  )
+    thread_yield();
   intr_set_level (old_level);
 }
 
@@ -307,8 +318,8 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread)
+    list_insert_ordered(&ready_list, &cur -> elem, compare_priority_high, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -331,11 +342,34 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+static void
+thread_set_priority_silly(int new_priority)
+{
+  struct thread *cur = thread_current ();
+  int old_priority = cur->priority;
+
+  cur->priority = new_priority;
+
+  if (old_priority > cur->priority) {
+    thread_yield();
+  }
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *cur = thread_current ();
+  int old_priority = cur->priority;
+
+  if (cur -> priority_before_donation != EMPTY_PRIORITY)
+    cur->priority_before_donation = new_priority;
+  else
+    cur->priority = new_priority;
+
+  if (old_priority > cur->priority) {
+    thread_yield();
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -462,7 +496,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->priority_before_donation = EMPTY_PRIORITY;
   t->magic = THREAD_MAGIC;
+  list_init (&t->locks);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -492,8 +528,11 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    list_sort(&ready_list, compare_priority_high, NULL);
+    return list_entry(list_pop_front(&ready_list),
+    struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -582,3 +621,93 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+bool
+compare_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  const struct thread *tl = list_entry(left, struct thread, elem);
+  const struct thread *tr = list_entry(right, struct thread, elem);
+  return tl -> priority > tr -> priority;
+}
+
+static bool
+compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  const struct thread *tl = list_entry(left, struct thread, sleep_elem);
+  const struct thread *tr = list_entry(right, struct thread, sleep_elem);
+
+  if (tl -> release_tick == tr -> release_tick)
+    return compare_priority_high(left, right, NULL);
+
+  return tl -> release_tick < tr -> release_tick;
+}
+
+void
+thread_sleep (int64_t ticks)
+{
+  enum intr_level old_level;
+  struct thread *current_thread;
+  old_level = intr_disable();
+  current_thread = thread_current();
+  current_thread-> release_tick = ticks;
+  if (current_thread != idle_thread)
+    list_insert_ordered(&sleep_list, &current_thread -> sleep_elem, compare_release_tick_low, NULL);
+  thread_block();
+  intr_set_level(old_level);
+}
+
+void
+thread_release (int64_t ticks) {
+  struct list_elem *e;
+  struct thread *t;
+  e = list_begin(&sleep_list);
+
+  while (e != list_end(&sleep_list)) {
+    t = list_entry(e, struct thread, sleep_elem);
+    if (ticks >= t -> release_tick) {
+      e = list_remove(&t -> sleep_elem);
+      thread_unblock(t);
+    } else {
+      break;
+    }
+  }
+}
+
+void print_thread_list(struct list *list)
+{
+  struct list_elem *cur;
+  struct thread *thread;
+  printf("\n------------------------\n");
+  for(cur = list_begin(list); cur != list_end(list); cur = list_next(cur)) {
+    thread = list_entry(cur, struct thread, elem);
+    printf("%s priority: %d", thread->name, thread->priority);
+  }
+  printf("\n------------------------\n");
+}
+
+void
+rollback_priority (void)
+{
+  struct thread *current_thread = thread_current();
+  ASSERT (current_thread != NULL);
+
+  int next_priority = EMPTY_PRIORITY;
+  if (!list_empty(&current_thread->locks)) {
+    next_priority = get_highest_priority_from_locks(&current_thread->locks);
+  }
+
+  if (
+    (
+      next_priority == EMPTY_PRIORITY ||
+      next_priority <= current_thread->priority_before_donation
+    ) && current_thread->priority_before_donation != EMPTY_PRIORITY
+  ) {
+    next_priority = current_thread->priority_before_donation;
+    current_thread->priority_before_donation = EMPTY_PRIORITY;
+    thread_set_priority_silly(next_priority);
+    return;
+  }
+
+  if (next_priority != EMPTY_PRIORITY) {
+    thread_set_priority_silly(next_priority);
+    return;
+  }
+}
