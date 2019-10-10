@@ -359,6 +359,9 @@ thread_set_priority_silly(int new_priority)
 void
 thread_set_priority (int new_priority) 
 {
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
   struct thread *cur = thread_current ();
   int old_priority = cur->priority;
 
@@ -367,6 +370,7 @@ thread_set_priority (int new_priority)
   else
     cur->priority = new_priority;
 
+  intr_set_level (old_level);
   if (old_priority > cur->priority) {
     thread_yield();
   }
@@ -689,6 +693,9 @@ rollback_priority (void)
   struct thread *current_thread = thread_current();
   ASSERT (current_thread != NULL);
 
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
   int next_priority = EMPTY_PRIORITY;
   if (!list_empty(&current_thread->locks)) {
     next_priority = get_highest_priority_from_locks(&current_thread->locks);
@@ -703,11 +710,9 @@ rollback_priority (void)
     next_priority = current_thread->priority_before_donation;
     current_thread->priority_before_donation = EMPTY_PRIORITY;
     thread_set_priority_silly(next_priority);
-    return;
+  } else if (next_priority != EMPTY_PRIORITY) {
+    thread_set_priority_silly(next_priority);
   }
 
-  if (next_priority != EMPTY_PRIORITY) {
-    thread_set_priority_silly(next_priority);
-    return;
-  }
+  intr_set_level (old_level);
 }
