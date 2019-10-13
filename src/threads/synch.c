@@ -366,7 +366,7 @@ priority_donation (struct lock *lock, bool outer)
   struct thread *current_thread = thread_current();
   struct lock *next_lock;
 
-  enum intr_level old_level;
+  enum intr_level old_level = intr_get_level();
 
   if (outer)
     old_level = intr_disable ();
@@ -386,7 +386,7 @@ priority_donation (struct lock *lock, bool outer)
     }
   }
 
-  if (outer)
+  if (outer && old_level)
     intr_set_level (old_level);
 }
 

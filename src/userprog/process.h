@@ -9,3 +9,10 @@ void process_exit (void);
 void process_activate (void);
 
 #endif /* userprog/process.h */
+
+struct cmd
+  {
+    char* name;
+    const char** argvs;
+    int argc;
+  };

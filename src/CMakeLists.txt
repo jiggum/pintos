@@ -22,6 +22,12 @@ set(
         threads/palloc.c
         threads/malloc.c
         threads/init.c
+        userprog/exception.c
+        userprog/gdt.c
+        userprog/pagedir.c
+        userprog/process.c
+        userprog/syscall.c
+        userprog/tss.c
         devices/timer.c
         lib/kernel/list.c
 )
