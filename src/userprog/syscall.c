@@ -6,15 +6,26 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "devices/shutdown.h"
 #include "lib/user/syscall.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
 static uintptr_t syscall_switch(struct intr_frame *);
 static void validate_addr(const void *addr, size_t size);
+static void halt_ ();
 static void exit_ (int status);
+static pid_t exec_ (const char *file);
 static int wait_ (pid_t pid);
+static bool create_ (const char *file, unsigned initial_size);
+static bool remove_ (const char *file);
+static int open_ (const char *file);
+static int filesize_ (int fd);
+static int read_ (int fd, void *buffer, unsigned size);
 static int write_ (int fd, const void *buffer, unsigned size);
+static void seek_ (int fd, unsigned position);
+static unsigned tell_ (int fd);
+static void close_ (int fd);
 
 void
 syscall_init (void) 
@@ -65,30 +76,63 @@ syscall_switch (struct intr_frame *f)
   int i;
   uintptr_t *addr;
   ASSERT(syscall_argc >= 0);
-  uintptr_t arg[3];
+  uintptr_t *arg[3];
 
   for(i = 0; i < syscall_argc; i++) {
     addr = f->esp + ((i + 1) * 4);
     validate_addr(addr, sizeof(uintptr_t *));
-    arg[i] = *(uintptr_t *)addr;
+    arg[i] = (uintptr_t *)addr;
   }
 
   switch (syscall){
-    case SYS_EXIT:
-      exit_((int)arg[0]);
+    case SYS_HALT:
+      halt_();
       break;
+    case SYS_EXIT:
+      exit_(*(int *)arg[0]);
+      break;
+    case SYS_EXEC:
+      return exec_(*(char **)arg[0]);
     case SYS_WAIT:
-      return wait_((pid_t)arg[0]);
+      return wait_(*(pid_t *)arg[0]);
+    case SYS_CREATE:
+      return create_(
+        *(char **)arg[0],
+        *(unsigned int *)arg[1]
+      );
+    case SYS_REMOVE:
+      return remove_(*(char **)arg[0]);
+    case SYS_OPEN:
+      return open_(*(char **)arg[0]);
+    case SYS_FILESIZE:
+      return filesize_(*(int *)arg[0]);
+    case SYS_READ:
+      return read_(
+        *(int *)arg[0],
+        *(void **)arg[1],
+        *(unsigned int *)arg[2]
+      );
     case SYS_WRITE:
       return write_(
-        (int)arg[0],
-        (void *)(size_t)arg[1],
-        (unsigned)arg[2]
+        *(int *)arg[0],
+        *(void **)arg[1],
+        *(unsigned int *)arg[2]
       );
+    case SYS_SEEK:
+      seek_(
+        *(int *)arg[0],
+        *(unsigned int *)arg[1]
+      );
+      break;
+    case SYS_TELL:
+      return tell_(*(int *)arg[0]);
+    case SYS_CLOSE:
+      close_(*(int *)arg[0]);
+      break;
     default:
       return 0;
   }
-  NOT_REACHED ();
+  return 0;
 }
 
 static void
@@ -100,6 +144,17 @@ validate_addr(const void *addr, size_t size) {
     !pagedir_get_page(thread_current()->pagedir, addr) ||
     !pagedir_get_page(thread_current()->pagedir, addr_last_byte)
   ) exit_(-1);
+}
+
+static void
+halt_ () {
+  shutdown_power_off();
+}
+
+static pid_t
+exec_ (const char *file)
+{
+
 }
 
 static void
@@ -123,9 +178,57 @@ wait_ (pid_t pid)
   return process_wait(pid);
 }
 
+static bool
+create_ (const char *file, unsigned initial_size)
+{
+
+}
+
+static bool
+remove_ (const char *file)
+{
+
+}
+
+static int
+open_ (const char *file)
+{
+
+}
+
+static int
+filesize_ (int fd)
+{
+
+}
+
+static int
+read_ (int fd, void *buffer, unsigned size)
+{
+
+}
+
 static int
 write_ (int fd, const void *buffer, unsigned size) {
   if (fd == 0) return -1;
   putbuf(buffer, size);
   return (int)size;
+}
+
+static void
+seek_ (int fd, unsigned position)
+{
+
+}
+
+static unsigned
+tell_ (int fd)
+{
+
+}
+
+static void
+close_ (int fd)
+{
+
 }
