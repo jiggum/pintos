@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -58,6 +59,7 @@ get_syscall_argc(int syscall)
 static uintptr_t
 syscall_switch (struct intr_frame *f)
 {
+  validate_addr(f->esp);
   int syscall = *(uintptr_t *)f->esp;
   int syscall_argc = get_syscall_argc(syscall);
   int i;
@@ -91,7 +93,10 @@ syscall_switch (struct intr_frame *f)
 
 static void
 validate_addr(const void *addr) {
-  if (!is_user_vaddr(addr)) exit_(-1);
+  if (
+    !is_user_vaddr(addr) ||
+    !lookup_page(thread_current()->pagedir, addr, false)
+  ) exit_(-1);
 }
 
 static void
