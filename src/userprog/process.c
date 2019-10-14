@@ -104,6 +104,7 @@ process_wait (tid_t child_tid)
   struct list_elem *e;
   struct thread *child_t = NULL;
   bool valid_tid = false;
+  int exit_status;
 
   for (
     e = list_begin (&cur->childs);
@@ -120,6 +121,9 @@ process_wait (tid_t child_tid)
 
   cur->wait_tid = child_tid;
   sema_down(&cur->child_sema);
+  exit_status = child_t->exit_status;
+  list_remove(&child_t->child_elem);
+  sema_up(&child_t->child_sema);
 
   return child_t->exit_status;
 
