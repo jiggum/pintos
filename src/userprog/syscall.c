@@ -233,7 +233,18 @@ open_ (const char *file)
 static int
 filesize_ (int fd)
 {
-
+  struct thread *cur = thread_current ();
+  struct file_descriptor *file_d = NULL;
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->file_descriptors);
+    e != list_end (&cur->file_descriptors);
+    e = list_next (e)
+  ) {
+    file_d = list_entry (e, struct file_descriptor, elem);
+    if (file_d->fd == fd) break;
+  }
+  return file_length(file_d->file);
 }
 
 static int
