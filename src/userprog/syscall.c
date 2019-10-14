@@ -7,8 +7,10 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "devices/shutdown.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
 #include "lib/user/syscall.h"
 
 static void syscall_handler (struct intr_frame *);
@@ -214,7 +216,18 @@ remove_ (const char *file)
 static int
 open_ (const char *file)
 {
+  struct thread *cur = thread_current ();
+  struct file* file_ = filesys_open(file);
+  if (file_ == NULL) goto error;
+  // TODO free somewhere
+  struct file_descriptor *file_d = malloc(sizeof(*file_d));
 
+  file_descriptor_init(file_d, file_, get_next_fd(cur));
+  list_insert_ordered(&cur->file_descriptors, &file_d -> elem, compare_fd_less, NULL);
+  return file_d->fd;
+
+  error:
+    return -1;
 }
 
 static int

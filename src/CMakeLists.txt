@@ -30,6 +30,7 @@ set(
         userprog/tss.c
         devices/timer.c
         lib/kernel/list.c
+        filesys/file.c
 )
 
 add_executable(pintos ${SOURCE_FILES})

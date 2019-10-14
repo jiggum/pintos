@@ -109,6 +109,7 @@ struct thread
     struct semaphore child_sema;
     int exit_status;
 
+    struct list file_descriptors;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -163,5 +164,7 @@ bool compare_priority_high (const struct list_elem *left, const struct list_elem
 void print_thread_list(struct list *list);
 
 void rollback_priority (void);
+
+int get_next_fd (struct thread *t);
 
 #endif /* threads/thread.h */

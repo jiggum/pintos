@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/file.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -507,6 +508,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->childs);
   list_push_back (&t->parent->childs, &t->child_elem);
   sema_init (&t->child_sema, 0);
+  list_init (&t->file_descriptors);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -719,4 +721,20 @@ rollback_priority (void)
   }
 
   intr_set_level (old_level);
+}
+
+int get_next_fd (struct thread *t)
+{
+  struct list_elem *e;
+  int next_fd = 2;
+  for (
+    e = list_begin (&t->file_descriptors);
+    e != list_end (&t->file_descriptors);
+    e = list_next (e), next_fd++
+  ) {
+    struct file_descriptor *file_d = list_entry (e, struct file_descriptor, elem);
+    ASSERT(file_d->fd >= next_fd);
+    if (next_fd != file_d->fd) break;
+  }
+  return next_fd;
 }
