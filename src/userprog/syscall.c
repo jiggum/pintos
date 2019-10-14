@@ -208,7 +208,7 @@ create_ (const char *file, unsigned initial_size)
 static bool
 remove_ (const char *file)
 {
-
+  return filesys_remove(file);
 }
 
 static int
