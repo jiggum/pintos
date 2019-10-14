@@ -6,7 +6,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/palloc.h"
 #include "devices/shutdown.h"
+#include "filesys/filesys.h"
 #include "lib/user/syscall.h"
 
 static void syscall_handler (struct intr_frame *);
@@ -92,6 +94,7 @@ syscall_switch (struct intr_frame *f)
       exit_(*(int *)arg[0]);
       break;
     case SYS_EXEC:
+      validate_addr(*(char **)arg[0], sizeof(char *));
       return exec_(*(char **)arg[0]);
     case SYS_WAIT:
       return wait_(*(pid_t *)arg[0]);
@@ -152,9 +155,22 @@ halt_ () {
 }
 
 static pid_t
-exec_ (const char *file)
+exec_ (const char *cmd_line)
 {
+  struct cmd *cmd;
 
+  cmd = palloc_get_page (0);
+  if (
+    !cmd_init(cmd, cmd_line) ||
+    !filesys_lookup(cmd->name)
+  ) goto error;
+  free_cmd(cmd);
+
+  return process_execute(cmd_line);
+
+  error:
+    if (cmd) free_cmd (cmd);
+    return -1;
 }
 
 static void

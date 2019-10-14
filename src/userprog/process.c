@@ -22,8 +22,6 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (struct cmd *cmd, void (**eip) (void), void **esp);
-static bool cmd_init (struct cmd *cmd, const char *cmd_line);
-static void free_cmd (struct cmd *cmd);
 static bool build_esp (void **esp, struct cmd *cmd);
 
 /* Starts a new thread running a user program loaded from
@@ -506,7 +504,7 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-static bool
+bool
 cmd_init (struct cmd *cmd, const char *cmd_line)
 {
   bool success = true;
@@ -515,6 +513,7 @@ cmd_init (struct cmd *cmd, const char *cmd_line)
 
   cmd->name = palloc_get_page (0);
   cmd->argvs = (const char**) palloc_get_page (0);
+  cmd->argc = 0;
   if (cmd->name == NULL) goto alloc_error;
   if (cmd->argvs == NULL) goto alloc_error;
 
@@ -534,7 +533,7 @@ cmd_init (struct cmd *cmd, const char *cmd_line)
     return success;
 };
 
-static void
+void
 free_cmd (struct cmd *cmd) {
   ASSERT(cmd != NULL)
 

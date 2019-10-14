@@ -16,3 +16,6 @@ struct cmd
     const char** argvs;
     int argc;
   };
+
+bool cmd_init (struct cmd *cmd, const char *cmd_line);
+void free_cmd (struct cmd *cmd);

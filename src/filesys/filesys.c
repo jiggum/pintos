@@ -101,3 +101,17 @@ do_format (void)
   free_map_close ();
   printf ("done.\n");
 }
+
+bool
+filesys_lookup (const char *name)
+{
+  struct dir *dir = dir_open_root ();
+  struct inode *inode = NULL;
+  bool exist = false;
+
+  if (dir != NULL)
+    dir_lookup (dir, name, &inode);
+  dir_close (dir);
+
+  return inode != NULL;
+}
