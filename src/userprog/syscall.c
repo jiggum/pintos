@@ -96,6 +96,15 @@ validate_addr(const void *addr) {
 
 static void
 exit_ (int status) {
+  struct thread *cur = thread_current ();
+
+  cur->exit_status = status;
+
+  if (cur->tid == cur->parent->wait_tid) {
+    list_remove(&cur->child_elem);
+    sema_up(&cur->parent->child_sema);
+  }
+
   printf("%s: exit(%d)\n",thread_name(), status);
   thread_exit ();
 }

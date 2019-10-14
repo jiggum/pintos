@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct cmd *cmd, void (**eip) (void), void **esp);
@@ -99,12 +100,33 @@ start_process (void *cmd_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
-//  while(1);
-  int i;
-  for (i = 0; i < 1000000000; i++);
-  return -1;
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  struct thread *child_t = NULL;
+  bool valid_tid = false;
+
+  for (
+    e = list_begin (&cur->childs);
+    e != list_end (&cur->childs);
+    e = list_next (e))
+  {
+    child_t = list_entry (e, struct thread, child_elem);
+    if (child_tid == child_t->tid) {
+      valid_tid = true;
+      break;
+    }
+  }
+  if (!valid_tid) goto invalid_tid;
+
+  cur->wait_tid = child_tid;
+  sema_down(&cur->child_sema);
+
+  return child_t->exit_status;
+
+  invalid_tid:
+    return -1;
 }
 
 /* Free the current process's resources. */

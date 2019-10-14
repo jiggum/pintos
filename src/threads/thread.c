@@ -502,7 +502,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->priority_before_donation = EMPTY_PRIORITY;
   t->magic = THREAD_MAGIC;
+  t->parent = running_thread();
   list_init (&t->locks);
+  list_init (&t->childs);
+  list_push_back (&t->parent->childs, &t->child_elem);
+  sema_init (&t->child_sema, 0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
