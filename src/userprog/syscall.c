@@ -99,23 +99,28 @@ syscall_switch (struct intr_frame *f)
     case SYS_WAIT:
       return wait_(*(pid_t *)arg[0]);
     case SYS_CREATE:
+      validate_addr(*(char **)arg[0], sizeof(char *));
       return create_(
         *(char **)arg[0],
         *(unsigned int *)arg[1]
       );
     case SYS_REMOVE:
+      validate_addr(*(char **)arg[0], sizeof(char *));
       return remove_(*(char **)arg[0]);
     case SYS_OPEN:
+      validate_addr(*(char **)arg[0], sizeof(char *));
       return open_(*(char **)arg[0]);
     case SYS_FILESIZE:
       return filesize_(*(int *)arg[0]);
     case SYS_READ:
+      validate_addr(*(void **)arg[1], sizeof(void *));
       return read_(
         *(int *)arg[0],
         *(void **)arg[1],
         *(unsigned int *)arg[2]
       );
     case SYS_WRITE:
+      validate_addr(*(void **)arg[1], sizeof(void *));
       return write_(
         *(int *)arg[0],
         *(void **)arg[1],
