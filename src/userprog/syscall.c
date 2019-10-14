@@ -11,7 +11,7 @@
 static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
 static uintptr_t syscall_switch(struct intr_frame *);
-static void validate_addr(const void *addr);
+static void validate_addr(const void *addr, size_t size);
 static void exit_ (int status);
 static int wait_ (pid_t pid);
 static int write_ (int fd, const void *buffer, unsigned size);
@@ -59,7 +59,7 @@ get_syscall_argc(int syscall)
 static uintptr_t
 syscall_switch (struct intr_frame *f)
 {
-  validate_addr(f->esp);
+  validate_addr(f->esp, sizeof(uintptr_t *));
   int syscall = *(uintptr_t *)f->esp;
   int syscall_argc = get_syscall_argc(syscall);
   int i;
@@ -67,9 +67,9 @@ syscall_switch (struct intr_frame *f)
   ASSERT(syscall_argc >= 0);
   uintptr_t arg[3];
 
-  for(i =0; i < syscall_argc; i ++) {
+  for(i = 0; i < syscall_argc; i++) {
     addr = f->esp + ((i + 1) * 4);
-    validate_addr(addr);
+    validate_addr(addr, sizeof(uintptr_t *));
     arg[i] = *(uintptr_t *)addr;
   }
 
@@ -92,10 +92,13 @@ syscall_switch (struct intr_frame *f)
 }
 
 static void
-validate_addr(const void *addr) {
+validate_addr(const void *addr, size_t size) {
+  const void *addr_last_byte = addr + size - 1;
   if (
     !is_user_vaddr(addr) ||
-    !lookup_page(thread_current()->pagedir, addr, false)
+    !is_user_vaddr(addr_last_byte) ||
+    !pagedir_get_page(thread_current()->pagedir, addr) ||
+    !pagedir_get_page(thread_current()->pagedir, addr_last_byte)
   ) exit_(-1);
 }
 
