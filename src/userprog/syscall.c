@@ -257,9 +257,17 @@ read_ (int fd, void *buffer, unsigned size)
 
 static int
 write_ (int fd, const void *buffer, unsigned size) {
-  if (fd == 0) return -1;
-  putbuf(buffer, size);
-  return (int)size;
+  if (fd == 0) goto error;
+  if (fd == 1) {
+    putbuf(buffer, size);
+    return (int) size;
+  }
+  struct file_descriptor *file_d = get_file_descriptor(fd);
+  if (file_d == NULL) goto error;
+  return file_write(file_d->file, buffer, size);
+
+  error:
+    return -1;
 }
 
 static void
