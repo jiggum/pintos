@@ -138,6 +138,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  file_close (cur->file);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -350,9 +351,11 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
 
   success = true;
 
+  t->file = file;
+  file_deny_write(file);
+
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 
