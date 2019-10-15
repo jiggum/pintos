@@ -19,7 +19,6 @@ static int get_syscall_argc(int syscall);
 static uintptr_t syscall_switch(struct intr_frame *);
 static void validate_addr(const void *addr, size_t size);
 static void halt_ (void);
-static void exit_ (int status);
 static pid_t exec_ (const char *file);
 static int wait_ (pid_t pid);
 static bool create_ (const char *file, unsigned initial_size);
@@ -94,7 +93,7 @@ syscall_switch (struct intr_frame *f)
       halt_();
       break;
     case SYS_EXIT:
-      exit_(*(int *)arg[0]);
+      syscall_exit (*(int *)arg[0]);
       break;
     case SYS_EXEC:
       validate_addr(*(char **)arg[0], sizeof(char *));
@@ -154,7 +153,7 @@ validate_addr(const void *addr, size_t size) {
     !is_user_vaddr(addr_last_byte) ||
     !pagedir_get_page(thread_current()->pagedir, addr) ||
     !pagedir_get_page(thread_current()->pagedir, addr_last_byte)
-  ) exit_(-1);
+  ) syscall_exit(-1);
 }
 
 static void
@@ -181,8 +180,8 @@ exec_ (const char *cmd_line)
     return -1;
 }
 
-static void
-exit_ (int status) {
+void
+syscall_exit (int status) {
   struct thread *cur = thread_current ();
 
   cur->exit_status = status;

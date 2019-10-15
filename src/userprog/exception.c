@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
+#include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
@@ -142,6 +143,8 @@ page_fault (struct intr_frame *f)
 
   /* Count page faults. */
   page_fault_cnt++;
+
+  syscall_exit (-1);
 
   /* Determine cause. */
   not_present = (f->error_code & PF_P) == 0;
