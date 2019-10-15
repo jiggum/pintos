@@ -18,7 +18,7 @@ static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
 static uintptr_t syscall_switch(struct intr_frame *);
 static void validate_addr(const void *addr, size_t size);
-static void halt_ ();
+static void halt_ (void);
 static void exit_ (int status);
 static pid_t exec_ (const char *file);
 static int wait_ (pid_t pid);
@@ -158,7 +158,7 @@ validate_addr(const void *addr, size_t size) {
 }
 
 static void
-halt_ () {
+halt_ (void) {
   shutdown_power_off();
 }
 
@@ -219,7 +219,6 @@ open_ (const char *file)
   struct thread *cur = thread_current ();
   struct file* file_ = filesys_open(file);
   if (file_ == NULL) goto error;
-  // TODO free somewhere
   struct file_descriptor *file_d = malloc(sizeof(*file_d));
 
   file_descriptor_init(file_d, file_, get_next_fd(cur));
@@ -266,17 +265,23 @@ write_ (int fd, const void *buffer, unsigned size) {
 static void
 seek_ (int fd, unsigned position)
 {
-
+  struct file_descriptor *file_d = get_file_descriptor(fd);
+  file_seek(file_d->file, position);
 }
 
 static unsigned
 tell_ (int fd)
 {
-
+  struct file_descriptor *file_d = get_file_descriptor(fd);
+  return file_tell(file_d->file);
 }
 
 static void
 close_ (int fd)
 {
-
+  struct file_descriptor *file_d = get_file_descriptor(fd);
+  if (file_d == NULL) return;
+  file_close(file_d->file);
+  list_remove(&file_d->elem);
+  free(file_d);
 }
