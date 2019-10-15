@@ -167,4 +167,6 @@ void rollback_priority (void);
 
 int get_next_fd (struct thread *t);
 
+struct file_descriptor* get_file_descriptor(int fd);
+
 #endif /* threads/thread.h */

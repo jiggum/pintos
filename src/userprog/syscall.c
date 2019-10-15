@@ -9,6 +9,7 @@
 #include "threads/palloc.h"
 #include "threads/malloc.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "lib/user/syscall.h"
@@ -232,24 +233,27 @@ open_ (const char *file)
 static int
 filesize_ (int fd)
 {
-  struct thread *cur = thread_current ();
-  struct file_descriptor *file_d = NULL;
-  struct list_elem *e;
-  for (
-    e = list_begin (&cur->file_descriptors);
-    e != list_end (&cur->file_descriptors);
-    e = list_next (e)
-  ) {
-    file_d = list_entry (e, struct file_descriptor, elem);
-    if (file_d->fd == fd) break;
-  }
+  struct file_descriptor *file_d = get_file_descriptor(fd);
   return file_length(file_d->file);
 }
 
 static int
 read_ (int fd, void *buffer, unsigned size)
 {
+  if (fd == 0) {
+    unsigned i;
+    for(i = 0; i < size; i++) {
+      ((uint8_t *)buffer)[i] = input_getc();
+    }
+    return (int)size;
+  } else {
+    struct file_descriptor *file_d = get_file_descriptor(fd);
+    if (file_d == NULL) goto error;
+    return file_read (file_d->file, buffer, size);
+  }
 
+  error:
+    return -1;
 }
 
 static int
