@@ -71,7 +71,9 @@ start_process (void *cmd_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+  filesys_lock_acquire();
   success = load (cmd, &if_.eip, &if_.esp);
+  filesys_lock_release();
 
   /* If load failed, quit. */
   free_cmd (cmd);
@@ -120,12 +122,13 @@ process_wait (tid_t child_tid)
   if (!valid_tid) goto invalid_tid;
 
   cur->wait_tid = child_tid;
-  sema_down(&cur->child_sema);
-  exit_status = child_t->exit_status;
   sema_up(&child_t->child_sema);
-#ifdef USERPROG
-  sema_down(&cur->child_sema);
-#endif
+
+  sema_down(&cur->parent_sema);
+  exit_status = child_t->exit_status;
+  list_remove(&child_t->child_elem);
+  sema_up(&child_t->child_sema);
+  sema_down(&cur->parent_sema);
 
   return exit_status;
 
@@ -140,8 +143,10 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  filesys_lock_acquire();
   file_close (cur->file);
-  sema_up(&cur->parent->child_sema);
+  sema_up(&cur->parent->parent_sema);
+  filesys_lock_release();
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

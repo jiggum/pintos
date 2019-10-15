@@ -31,6 +31,7 @@ set(
         devices/timer.c
         lib/kernel/list.c
         filesys/file.c
+        filesys/filesys.c
 )
 
 add_executable(pintos ${SOURCE_FILES})

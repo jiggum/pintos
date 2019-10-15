@@ -108,6 +108,7 @@ struct thread
     struct thread *parent;
     tid_t wait_tid;
     struct semaphore child_sema;
+    struct semaphore parent_sema;
     int exit_status;
 
     struct list file_descriptors;
