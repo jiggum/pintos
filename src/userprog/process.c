@@ -122,10 +122,12 @@ process_wait (tid_t child_tid)
   cur->wait_tid = child_tid;
   sema_down(&cur->child_sema);
   exit_status = child_t->exit_status;
-  list_remove(&child_t->child_elem);
   sema_up(&child_t->child_sema);
+#ifdef USERPROG
+  sema_down(&cur->child_sema);
+#endif
 
-  return child_t->exit_status;
+  return exit_status;
 
   invalid_tid:
     return -1;
@@ -139,6 +141,7 @@ process_exit (void)
   uint32_t *pd;
 
   file_close (cur->file);
+  sema_up(&cur->parent->child_sema);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -351,11 +354,10 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
 
   success = true;
 
-  t->file = file;
-  file_deny_write(file);
-
  done:
   /* We arrive here whether the load is successful or not. */
+  t->file = file;
+  file_deny_write(file);
   return success;
 }
 

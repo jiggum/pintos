@@ -187,10 +187,12 @@ exit_ (int status) {
 
   cur->exit_status = status;
 
+  printf("%s: exit(%d)\n",thread_name(), status);
+
   if (cur->tid == cur->parent->wait_tid) {
     sema_up(&cur->parent->child_sema);
   }
-  printf("%s: exit(%d)\n",thread_name(), status);
+  list_remove(&cur->child_elem);
   sema_down(&cur->child_sema);
   thread_exit ();
 }
