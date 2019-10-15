@@ -509,6 +509,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&t->parent->childs, &t->child_elem);
   sema_init (&t->child_sema, 0);
   sema_init (&t->parent_sema, 0);
+  sema_init (&t->execute_sema, 0);
   list_init (&t->file_descriptors);
 
   old_level = intr_disable ();

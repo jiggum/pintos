@@ -34,6 +34,7 @@ process_execute (const char *cmd_line)
   char *cmd_line_copy = NULL;
   struct cmd *cmd;
   tid_t tid;
+  struct thread *cur = thread_current ();
 
   cmd = palloc_get_page (0);
   if (!cmd_init(cmd, cmd_line)) goto tid_error;
@@ -47,6 +48,8 @@ process_execute (const char *cmd_line)
   tid = thread_create (cmd->name, PRI_DEFAULT, start_process, cmd);
   if (tid == TID_ERROR) goto tid_error;
 
+  sema_down(&cur->execute_sema);
+  if (!cur->load_success) tid = TID_ERROR;
   palloc_free_page(cmd_line_copy);
 
   return tid;
@@ -65,6 +68,7 @@ start_process (void *cmd_)
   struct cmd *cmd = cmd_;
   struct intr_frame if_;
   bool success;
+  struct thread *cur = thread_current ();
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -77,8 +81,11 @@ start_process (void *cmd_)
 
   /* If load failed, quit. */
   free_cmd (cmd);
-  if (!success) 
-    thread_exit ();
+  cur->parent->load_success = success;
+  sema_up(&cur->parent->execute_sema);
+  if (!success) {;
+    thread_exit();
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -121,7 +128,6 @@ process_wait (tid_t child_tid)
   }
   if (!valid_tid) goto invalid_tid;
 
-  cur->wait_tid = child_tid;
   sema_up(&child_t->child_sema);
 
   sema_down(&cur->parent_sema);
@@ -145,6 +151,16 @@ process_exit (void)
 
   filesys_lock_acquire();
   file_close (cur->file);
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->file_descriptors);
+    e != list_end (&cur->file_descriptors);
+  ) {
+    struct file_descriptor *file_d = list_entry (e, struct file_descriptor, elem);
+    e = list_remove (e);
+    file_close(file_d->file);
+    free(file_d);
+  }
   sema_up(&cur->parent->parent_sema);
   filesys_lock_release();
   /* Destroy the current process's page directory and switch back

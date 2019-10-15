@@ -106,13 +106,14 @@ struct thread
     struct list childs;
     struct list_elem child_elem;
     struct thread *parent;
-    tid_t wait_tid;
     struct semaphore child_sema;
     struct semaphore parent_sema;
+    struct semaphore execute_sema;
     int exit_status;
 
     struct list file_descriptors;
     struct file *file;
+    bool load_success;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
