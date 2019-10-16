@@ -169,21 +169,24 @@ halt_ (void) {
 static pid_t
 exec_ (const char *cmd_line)
 {
+  pid_t res;
   syscall_lock_acquire();
   struct cmd *cmd;
 
   cmd = palloc_get_page (0);
-  if (!cmd_init(cmd, cmd_line)) goto error;
-  if (!filesys_lookup(cmd->name)) goto error;
-  free_cmd(cmd);
-  syscall_lock_release();
+  if (
+    !cmd_init(cmd, cmd_line) ||
+    !filesys_lookup(cmd->name)
+  ) {
+    res = -1;
+    goto done;
+  }
+  res = process_execute(cmd_line);
 
-  return process_execute(cmd_line);
-
-  error:
-    if (cmd) free_cmd (cmd);
+  done:
+    free_cmd (cmd);
     syscall_lock_release();
-    return -1;
+    return res;
 }
 
 void
@@ -247,34 +250,51 @@ filesize_ (int fd)
 static int
 read_ (int fd, void *buffer, unsigned size)
 {
+  int res;
+  syscall_lock_acquire();
   if (fd == 0) {
     unsigned i;
     for(i = 0; i < size; i++) {
       ((uint8_t *)buffer)[i] = input_getc();
     }
-    return (int)size;
+    res = (int)size;
   } else {
     struct file_descriptor *file_d = get_file_descriptor(fd);
-    if (file_d == NULL) goto error;
-    return file_read (file_d->file, buffer, size);
+    if (file_d == NULL) {
+      res = -1;
+      goto done;
+    }
+    res = file_read (file_d->file, buffer, size);
   }
-  error:
-    return -1;
+
+  done:
+    syscall_lock_release();
+    return res;
 }
 
 static int
 write_ (int fd, const void *buffer, unsigned size) {
-  if (fd == 0) goto error;
+  int res;
+  syscall_lock_acquire();
+  if (fd == 0) {
+    res =  -1;
+    goto done;
+  }
   if (fd == 1) {
     putbuf(buffer, size);
-    return (int) size;
+    res = (int) size;
+    goto done;
   }
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  if (file_d == NULL) goto error;
-  return file_write(file_d->file, buffer, size);
+  if (file_d == NULL) {
+    res =  -1;
+    goto done;
+  }
+  res = file_write(file_d->file, buffer, size);
 
-  error:
-    return -1;
+  done:
+    syscall_lock_release();
+    return res;
 }
 
 static void
