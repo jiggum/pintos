@@ -16,24 +16,29 @@
 
 static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
-static void syscall_switch(struct intr_frame *);
+static uint32_t syscall_switch(struct intr_frame *);
 static void validate_addr(const void *addr, size_t size);
 static void halt_ (void);
-static void exec_ (const char *file, struct intr_frame *f);
-static void wait_ (pid_t pid, struct intr_frame *f);
-static void create_ (const char *file, unsigned initial_size, struct intr_frame *f);
-static void remove_ (const char *file, struct intr_frame *f);
-static void open_ (const char *file, struct intr_frame *f);
-static void filesize_ (int fd, struct intr_frame *f);
-static void read_ (int fd, void *buffer, unsigned size, struct intr_frame *f);
-static void write_ (int fd, const void *buffer, unsigned size, struct intr_frame *f);
+static pid_t exec_ (const char *file);
+static int wait_ (pid_t pid);
+static bool create_ (const char *file, unsigned initial_size);
+static bool remove_ (const char *file);
+static int open_ (const char *file);
+static int filesize_ (int fd);
+static int read_ (int fd, void *buffer, unsigned size);
+static int write_ (int fd, const void *buffer, unsigned size);
 static void seek_ (int fd, unsigned position);
-static void tell_ (int fd, struct intr_frame *f);
+static unsigned tell_ (int fd);
 static void close_ (int fd);
+static void syscall_lock_acquire (void);
+static void syscall_lock_release (void);
+
+struct lock lock;
 
 void
 syscall_init (void) 
 {
+  lock_init (&lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -42,7 +47,7 @@ syscall_handler (struct intr_frame *f)
 {
 //  printf ("system call : %d\n",*(uintptr_t *)f->esp);
 //  hex_dump((uintptr_t)f->esp, f->esp, 100, true);
-  syscall_switch(f);
+  f->eax = syscall_switch(f);
 }
 
 static int
@@ -71,7 +76,7 @@ get_syscall_argc(int syscall)
   }
 }
 
-static void
+static uint32_t
 syscall_switch (struct intr_frame *f)
 {
   validate_addr(f->esp, sizeof(uintptr_t *));
@@ -97,48 +102,37 @@ syscall_switch (struct intr_frame *f)
       break;
     case SYS_EXEC:
       validate_addr(*(char **)arg[0], sizeof(char *));
-      exec_(*(char **)arg[0], f);
-      break;
+      return exec_(*(char **)arg[0]);
     case SYS_WAIT:
-      wait_(*(pid_t *)arg[0], f);
-      break;
+      return wait_(*(pid_t *)arg[0]);
     case SYS_CREATE:
       validate_addr(*(char **)arg[0], sizeof(char *));
-      create_(
+      return create_(
         *(char **)arg[0],
-        *(unsigned int *)arg[1],
-        f
+        *(unsigned int *)arg[1]
       );
-      break;
     case SYS_REMOVE:
       validate_addr(*(char **)arg[0], sizeof(char *));
-      remove_(*(char **)arg[0], f);
-      break;
+      return remove_(*(char **)arg[0]);
     case SYS_OPEN:
       validate_addr(*(char **)arg[0], sizeof(char *));
-      open_(*(char **)arg[0], f);
-      break;
+      return open_(*(char **)arg[0]);
     case SYS_FILESIZE:
-      filesize_(*(int *)arg[0], f);
-      break;
+      return filesize_(*(int *)arg[0]);
     case SYS_READ:
       validate_addr(*(void **)arg[1], sizeof(void *));
-      read_(
+      return read_(
         *(int *)arg[0],
         *(void **)arg[1],
-        *(unsigned int *)arg[2],
-        f
+        *(unsigned int *)arg[2]
       );
-      break;
     case SYS_WRITE:
       validate_addr(*(void **)arg[1], sizeof(void *));
-      write_(
+      return write_(
         *(int *)arg[0],
         *(void **)arg[1],
-        *(unsigned int *)arg[2],
-        f
+        *(unsigned int *)arg[2]
       );
-      break;
     case SYS_SEEK:
       seek_(
         *(int *)arg[0],
@@ -146,14 +140,14 @@ syscall_switch (struct intr_frame *f)
       );
       break;
     case SYS_TELL:
-      tell_(*(int *)arg[0], f);
-      break;
+      return tell_(*(int *)arg[0]);
     case SYS_CLOSE:
       close_(*(int *)arg[0]);
       break;
     default:
       break;
   }
+  return 0;
 }
 
 static void
@@ -172,26 +166,24 @@ halt_ (void) {
   shutdown_power_off();
 }
 
-static void
-exec_ (const char *cmd_line, struct intr_frame *f)
+static pid_t
+exec_ (const char *cmd_line)
 {
+  syscall_lock_acquire();
   struct cmd *cmd;
 
   cmd = palloc_get_page (0);
   if (!cmd_init(cmd, cmd_line)) goto error;
-  filesys_lock_acquire();
-  if (!filesys_lookup(cmd->name)) {
-    filesys_lock_release();
-    goto error;
-  } else filesys_lock_release();
+  if (!filesys_lookup(cmd->name)) goto error;
   free_cmd(cmd);
+  syscall_lock_release();
 
-  f->eax = process_execute(cmd_line);
-  return;
+  return process_execute(cmd_line);
 
   error:
     if (cmd) free_cmd (cmd);
-    f->eax = -1;
+    syscall_lock_release();
+    return -1;
 }
 
 void
@@ -208,113 +200,95 @@ syscall_exit (int status) {
   thread_exit ();
 }
 
-static void
-wait_ (pid_t pid, struct intr_frame *f)
+static int
+wait_ (pid_t pid)
 {
-  f->eax = process_wait(pid);
+  return process_wait(pid);
 }
 
-static void
-create_ (const char *file, unsigned initial_size, struct intr_frame *f)
+static bool
+create_ (const char *file, unsigned initial_size)
 {
-  filesys_lock_acquire();
-  f->eax = filesys_create(file, initial_size);
-  filesys_lock_release();
+  return filesys_create(file, initial_size);
 }
 
-static void
-remove_ (const char *file, struct intr_frame *f)
+static bool
+remove_ (const char *file)
 {
-  filesys_lock_acquire();
-  f->eax = filesys_remove(file);
-  filesys_lock_release();
+  return filesys_remove(file);
 }
 
-static void
-open_ (const char *file, struct intr_frame *f)
+static int
+open_ (const char *file)
 {
+  syscall_lock_acquire();
   struct thread *cur = thread_current ();
-  filesys_lock_acquire();
   struct file* file_ = filesys_open(file);
-  filesys_lock_release();
   if (file_ == NULL) goto error;
   struct file_descriptor *file_d = malloc(sizeof(*file_d));
 
   file_descriptor_init(file_d, file_, get_next_fd(cur));
   list_insert_ordered(&cur->file_descriptors, &file_d -> elem, compare_fd_less, NULL);
-  f->eax = file_d->fd;
-  return;
+  syscall_lock_release();
+  return file_d->fd;
 
   error:
-    f->eax = -1;
+    syscall_lock_release();
+    return -1;
 }
 
-static void
-filesize_ (int fd, struct intr_frame *f)
+static int
+filesize_ (int fd)
 {
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  filesys_lock_acquire();
-  f->eax = file_length(file_d->file);
-  filesys_lock_release();
+  return file_length(file_d->file);
 }
 
-void
-read_ (int fd, void *buffer, unsigned size, struct intr_frame *f)
+static int
+read_ (int fd, void *buffer, unsigned size)
 {
   if (fd == 0) {
     unsigned i;
     for(i = 0; i < size; i++) {
       ((uint8_t *)buffer)[i] = input_getc();
     }
-    f->eax = (int)size;
+    return (int)size;
   } else {
     struct file_descriptor *file_d = get_file_descriptor(fd);
     if (file_d == NULL) goto error;
-    filesys_lock_acquire();
-    f->eax = file_read (file_d->file, buffer, size);
-    filesys_lock_release();
+    return file_read (file_d->file, buffer, size);
   }
-  return;
-
   error:
-    f->eax = -1;
+    return -1;
 }
 
-static void
-write_ (int fd, const void *buffer, unsigned size, struct intr_frame *f) {
+static int
+write_ (int fd, const void *buffer, unsigned size) {
   if (fd == 0) goto error;
   if (fd == 1) {
     putbuf(buffer, size);
-    f->eax = (int) size;
-    return;
+    return (int) size;
   }
   struct file_descriptor *file_d = get_file_descriptor(fd);
   if (file_d == NULL) goto error;
-  filesys_lock_acquire();
-  f->eax = file_write(file_d->file, buffer, size);
-  filesys_lock_release();
-  return;
+  return file_write(file_d->file, buffer, size);
 
   error:
-    f->eax = -1;
+    return -1;
 }
 
 static void
 seek_ (int fd, unsigned position)
 {
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  filesys_lock_acquire();
   file_seek(file_d->file, position);
-  filesys_lock_release();
 }
 
-static void
-tell_ (int fd, struct intr_frame *f)
+static unsigned
+tell_ (int fd)
 {
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  filesys_lock_acquire();
-  f->eax = file_tell(file_d->file);
-  filesys_lock_release();
+  return file_tell(file_d->file);
 }
 
 static void
@@ -322,9 +296,19 @@ close_ (int fd)
 {
   struct file_descriptor *file_d = get_file_descriptor(fd);
   if (file_d == NULL) return;
-  filesys_lock_acquire();
   file_close(file_d->file);
-  filesys_lock_release();
   list_remove(&file_d->elem);
   free(file_d);
+}
+
+static void
+syscall_lock_acquire (void)
+{
+  lock_acquire(&lock);
+}
+
+static void
+syscall_lock_release (void)
+{
+  lock_release(&lock);
 }

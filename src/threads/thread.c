@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "filesys/file.h"
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -757,4 +758,20 @@ get_file_descriptor(int fd)
     if (file_d->fd == fd) return file_d;
   }
   return NULL;
+}
+
+void
+free_file_descriptors()
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->file_descriptors);
+    e != list_end (&cur->file_descriptors);
+    ) {
+    struct file_descriptor *file_d = list_entry (e, struct file_descriptor, elem);
+    e = list_remove (e);
+    file_close(file_d->file);
+    free(file_d);
+  }
 }

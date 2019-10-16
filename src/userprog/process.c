@@ -75,9 +75,7 @@ start_process (void *cmd_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  filesys_lock_acquire();
   success = load (cmd, &if_.eip, &if_.esp);
-  filesys_lock_release();
 
   /* If load failed, quit. */
   free_cmd (cmd);
@@ -149,20 +147,9 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  filesys_lock_acquire();
   file_close (cur->file);
-  struct list_elem *e;
-  for (
-    e = list_begin (&cur->file_descriptors);
-    e != list_end (&cur->file_descriptors);
-  ) {
-    struct file_descriptor *file_d = list_entry (e, struct file_descriptor, elem);
-    e = list_remove (e);
-    file_close(file_d->file);
-    free(file_d);
-  }
+  free_file_descriptors();
   sema_up(&cur->parent->parent_sema);
-  filesys_lock_release();
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

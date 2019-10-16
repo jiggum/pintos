@@ -173,4 +173,6 @@ int get_next_fd (struct thread *t);
 
 struct file_descriptor* get_file_descriptor(int fd);
 
+void free_file_descriptors();
+
 #endif /* threads/thread.h */
