@@ -2,6 +2,7 @@
 #include <debug.h>
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "lib/kernel/list.h"
 
 /* An open file. */
 struct file 
@@ -165,4 +166,18 @@ file_tell (struct file *file)
 {
   ASSERT (file != NULL);
   return file->pos;
+}
+
+void
+file_descriptor_init(struct file_descriptor *file_d, struct file *file, int fd)
+{
+  file_d->fd = fd;
+  file_d->file = file;
+}
+
+bool
+compare_fd_less (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  const struct file_descriptor *file_d_l = list_entry(left, struct file_descriptor, elem);
+  const struct file_descriptor *file_d_r = list_entry(right, struct file_descriptor, elem);
+  return file_d_l -> fd < file_d_r -> fd;
 }

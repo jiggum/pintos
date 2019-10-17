@@ -11,6 +11,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -359,6 +361,9 @@ thread_set_priority_silly(int new_priority)
 void
 thread_set_priority (int new_priority) 
 {
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
   struct thread *cur = thread_current ();
   int old_priority = cur->priority;
 
@@ -367,6 +372,7 @@ thread_set_priority (int new_priority)
   else
     cur->priority = new_priority;
 
+  intr_set_level (old_level);
   if (old_priority > cur->priority) {
     thread_yield();
   }
@@ -498,7 +504,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->priority_before_donation = EMPTY_PRIORITY;
   t->magic = THREAD_MAGIC;
+  t->parent = running_thread();
   list_init (&t->locks);
+  list_init (&t->childs);
+  list_push_back (&t->parent->childs, &t->child_elem);
+  sema_init (&t->child_sema, 0);
+  sema_init (&t->parent_sema, 0);
+  sema_init (&t->execute_sema, 0);
+  list_init (&t->file_descriptors);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -689,6 +702,9 @@ rollback_priority (void)
   struct thread *current_thread = thread_current();
   ASSERT (current_thread != NULL);
 
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
   int next_priority = EMPTY_PRIORITY;
   if (!list_empty(&current_thread->locks)) {
     next_priority = get_highest_priority_from_locks(&current_thread->locks);
@@ -703,11 +719,59 @@ rollback_priority (void)
     next_priority = current_thread->priority_before_donation;
     current_thread->priority_before_donation = EMPTY_PRIORITY;
     thread_set_priority_silly(next_priority);
-    return;
+  } else if (next_priority != EMPTY_PRIORITY) {
+    thread_set_priority_silly(next_priority);
   }
 
-  if (next_priority != EMPTY_PRIORITY) {
-    thread_set_priority_silly(next_priority);
-    return;
+  intr_set_level (old_level);
+}
+
+int
+get_next_fd (struct thread *t)
+{
+  struct list_elem *e;
+  int next_fd = 2;
+  for (
+    e = list_begin (&t->file_descriptors);
+    e != list_end (&t->file_descriptors);
+    e = list_next (e), next_fd++
+  ) {
+    struct file_descriptor *file_d = list_entry (e, struct file_descriptor, elem);
+    ASSERT(file_d->fd >= next_fd);
+    if (next_fd != file_d->fd) break;
+  }
+  return next_fd;
+}
+
+struct file_descriptor*
+get_file_descriptor(int fd)
+{
+  struct thread *cur = thread_current ();
+  struct file_descriptor *file_d = NULL;
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->file_descriptors);
+    e != list_end (&cur->file_descriptors);
+    e = list_next (e)
+    ) {
+    file_d = list_entry (e, struct file_descriptor, elem);
+    if (file_d->fd == fd) return file_d;
+  }
+  return NULL;
+}
+
+void
+free_file_descriptors()
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->file_descriptors);
+    e != list_end (&cur->file_descriptors);
+    ) {
+    struct file_descriptor *file_d = list_entry (e, struct file_descriptor, elem);
+    e = list_remove (e);
+    file_close(file_d->file);
+    free(file_d);
   }
 }

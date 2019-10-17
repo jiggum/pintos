@@ -32,7 +32,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
-static void priority_donation (struct lock *lock);
+static void priority_donation (struct lock *lock, bool outer);
 static int get_highest_priority_from_waiters(struct list *list);
 static bool compare_cond_priority_high (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 
@@ -210,7 +210,7 @@ lock_acquire (struct lock *lock)
   current_thread = thread_current();
 
   current_thread->waiting_lock = lock;
-  priority_donation(lock);
+  priority_donation(lock, true);
   sema_down (&lock->semaphore);
   lock->holder = current_thread;
   list_push_back (&current_thread->locks, &lock->lock_elem);
@@ -361,26 +361,33 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 }
 
 static void
-priority_donation (struct lock *lock)
+priority_donation (struct lock *lock, bool outer)
 {
   struct thread *current_thread = thread_current();
   struct lock *next_lock;
 
+  enum intr_level old_level = intr_get_level();
+
+  if (outer)
+    old_level = intr_disable ();
+
   if (
-    lock == NULL ||
-    lock->holder == NULL ||
-    lock->holder->priority >= current_thread->priority
-  )
-    return;
+    lock != NULL &&
+    lock->holder != NULL &&
+    lock->holder->priority < current_thread->priority
+  ) {
+    if (lock->holder->priority_before_donation == EMPTY_PRIORITY)
+      lock->holder->priority_before_donation = lock->holder->priority;
+    lock->holder->priority = current_thread->priority;
 
-  if (lock->holder->priority_before_donation == EMPTY_PRIORITY)
-    lock->holder->priority_before_donation = lock->holder->priority;
-  lock->holder->priority = current_thread->priority;
-
-  next_lock = lock->holder->waiting_lock;
-  if (next_lock != NULL) {
-    priority_donation(next_lock);
+    next_lock = lock->holder->waiting_lock;
+    if (next_lock != NULL) {
+      priority_donation(next_lock, false);
+    }
   }
+
+  if (outer && old_level)
+    intr_set_level (old_level);
 }
 
 static int

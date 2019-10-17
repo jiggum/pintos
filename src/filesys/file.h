@@ -2,6 +2,8 @@
 #define FILESYS_FILE_H
 
 #include "filesys/off_t.h"
+#include <stdbool.h>
+#include "lib/kernel/list.h"
 
 struct inode;
 
@@ -25,5 +27,16 @@ void file_allow_write (struct file *);
 void file_seek (struct file *, off_t);
 off_t file_tell (struct file *);
 off_t file_length (struct file *);
+
+struct file_descriptor
+{
+  struct file *file;
+  int fd;
+  struct list_elem elem;
+};
+
+void file_descriptor_init(struct file_descriptor *file_d, struct file *file, int fd);
+
+bool compare_fd_less (const struct list_elem *left, const struct list_elem *right, void *aux);
 
 #endif /* filesys/file.h */

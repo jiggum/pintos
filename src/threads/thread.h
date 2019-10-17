@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
+#include "filesys/file.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -101,6 +103,17 @@ struct thread
 
     struct list locks;
 
+    struct list childs;
+    struct list_elem child_elem;
+    struct thread *parent;
+    struct semaphore child_sema;
+    struct semaphore parent_sema;
+    struct semaphore execute_sema;
+    int exit_status;
+
+    struct list file_descriptors;
+    struct file *file;
+    bool load_success;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -155,5 +168,11 @@ bool compare_priority_high (const struct list_elem *left, const struct list_elem
 void print_thread_list(struct list *list);
 
 void rollback_priority (void);
+
+int get_next_fd (struct thread *t);
+
+struct file_descriptor* get_file_descriptor(int fd);
+
+void free_file_descriptors();
 
 #endif /* threads/thread.h */
