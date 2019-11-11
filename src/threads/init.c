@@ -22,6 +22,7 @@
 #include "threads/palloc.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
+#include "vm/frame.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/exception.h"
@@ -98,6 +99,7 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
+  frame_init();
 
   /* Segmentation. */
 #ifdef USERPROG

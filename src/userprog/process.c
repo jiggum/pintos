@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct cmd *cmd, void (**eip) (void), void **esp);
@@ -450,14 +451,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      uint8_t *kpage = frame_allocate (PAL_USER);
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          frame_free (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -465,7 +466,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          palloc_free_page (kpage);
+          frame_free (kpage);
           return false; 
         }
 
@@ -485,14 +486,14 @@ setup_stack (void **esp, struct cmd *cmd)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frame_allocate (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         build_esp(esp, cmd);
       else
-        palloc_free_page (kpage);
+        frame_free (kpage);
     }
 
 //  printf("\nhere!! name:%s\n", cmd->name);

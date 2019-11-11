@@ -32,6 +32,7 @@ set(
         lib/kernel/list.c
         filesys/file.c
         filesys/filesys.c
+        vm/frame.c
 )
 
 add_executable(pintos ${SOURCE_FILES})
