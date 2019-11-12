@@ -32,6 +32,8 @@ static unsigned tell_ (int fd);
 static void close_ (int fd);
 static void syscall_lock_acquire (void);
 static void syscall_lock_release (void);
+static int get_user (const uint8_t *uaddr);
+static void validate_user(const uint8_t *uaddr);
 
 struct lock lock;
 
@@ -102,33 +104,36 @@ syscall_switch (struct intr_frame *f)
       syscall_exit (*(int *)arg[0]);
       break;
     case SYS_EXEC:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return exec_(*(char **)arg[0]);
     case SYS_WAIT:
       return wait_(*(pid_t *)arg[0]);
     case SYS_CREATE:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
+      validate_user(*(uint8_t **)arg[0] + *(unsigned int *)arg[1] - 1);
       return create_(
         *(char **)arg[0],
         *(unsigned int *)arg[1]
       );
     case SYS_REMOVE:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return remove_(*(char **)arg[0]);
     case SYS_OPEN:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return open_(*(char **)arg[0]);
     case SYS_FILESIZE:
       return filesize_(*(int *)arg[0]);
     case SYS_READ:
-      validate_addr(*(void **)arg[1], sizeof(void *));
+      validate_user(*(uint8_t **)arg[1]);
+      validate_user(*(uint8_t **)arg[1] + *(unsigned int *)arg[2] - 1);
       return read_(
         *(int *)arg[0],
         *(void **)arg[1],
         *(unsigned int *)arg[2]
       );
     case SYS_WRITE:
-      validate_addr(*(void **)arg[1], sizeof(void *));
+      validate_user(*(uint8_t **)arg[1]);
+      validate_user(*(uint8_t **)arg[1] + *(unsigned int *)arg[2] - 1);
       return write_(
         *(int *)arg[0],
         *(void **)arg[1],
@@ -332,4 +337,23 @@ static void
 syscall_lock_release (void)
 {
   lock_release(&lock);
+}
+
+// pintod doc's 3.1.5
+/* Reads a byte at user virtual address UADDR.
+UADDR must be below PHYS_BASE.
+Returns the byte value if successful, -1 if a segfault
+occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+  int result;
+  asm ("movl $1f, %0; movzbl %1, %0; 1:"
+  : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+
+static void
+validate_user(const uint8_t *uaddr) {
+  if ((void*)uaddr >= PHYS_BASE || get_user(uaddr) == -1) syscall_exit(-1);
 }
