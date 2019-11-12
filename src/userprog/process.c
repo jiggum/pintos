@@ -20,6 +20,7 @@
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct cmd *cmd, void (**eip) (void), void **esp);
@@ -167,6 +168,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  page_table_destory(&cur->page_table);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -270,8 +272,8 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
-    goto done;
+  if (t->pagedir == NULL) PANIC("t->pagedir is NULL");
+  page_table_init(&t->page_table);
   process_activate ();
 
   /* Open executable file. */
@@ -519,7 +521,8 @@ install_page (void *upage, void *kpage, bool writable)
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+          && pagedir_set_page (t->pagedir, upage, kpage, writable))
+          || page_table_append(&t->page_table, upage);
 }
 
 bool

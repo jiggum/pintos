@@ -5,12 +5,17 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+static bool load_page(void *upage);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -144,12 +149,29 @@ page_fault (struct intr_frame *f)
   /* Count page faults. */
   page_fault_cnt++;
 
-  syscall_exit (-1);
-
   /* Determine cause. */
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+
+  struct thread *cur = thread_current ();
+
+  if(
+    not_present &&
+    fault_addr != NULL
+  ) {
+    void* upage = pg_round_down(fault_addr);
+    void* esp = user ? f->esp : cur->esp;
+    if (
+      (fault_addr == esp - 4 || fault_addr == esp - 32 || esp <= fault_addr) &&
+      (fault_addr < PHYS_BASE)
+    ) {
+      page_table_append(&cur->page_table, upage);
+    }
+    if (load_page(upage)) return;
+  }
+
+  syscall_exit (-1);
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -162,3 +184,17 @@ page_fault (struct intr_frame *f)
   kill (f);
 }
 
+static bool
+load_page(void *upage)
+{
+  struct thread *cur = thread_current ();
+  struct page_table_entry *pte = page_table_find(&cur->page_table, upage);
+  if(pte == NULL) goto FAIL;
+  void *ppage = frame_allocate(PAL_USER);
+  if(ppage == NULL) PANIC ("frame_allocate returned null");
+  if(!pagedir_set_page(cur->pagedir, pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
+
+  return true;
+  FAIL:
+    return false;
+};

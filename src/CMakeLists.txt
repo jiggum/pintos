@@ -33,6 +33,7 @@ set(
         filesys/file.c
         filesys/filesys.c
         vm/frame.c
+        vm/page.c
 )
 
 add_executable(pintos ${SOURCE_FILES})

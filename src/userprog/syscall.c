@@ -45,6 +45,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
+  thread_current()->esp = f->esp;
 //  printf ("system call : %d\n",*(uintptr_t *)f->esp);
 //  hex_dump((uintptr_t)f->esp, f->esp, 100, true);
   f->eax = syscall_switch(f);

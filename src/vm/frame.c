@@ -13,7 +13,7 @@ static struct hash frame_table;
 static unsigned hash_func(const struct hash_elem *elem, void *aux UNUSED)
 {
   struct frame_table_entry *fte = hash_entry(elem, struct frame_table_entry, elem);
-  return hash_bytes(&fte->ppage, sizeof fte->ppage);
+  return hash_bytes(&fte->ppage, sizeof(fte->ppage));
 }
 
 static bool
