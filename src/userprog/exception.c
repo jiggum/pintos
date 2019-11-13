@@ -9,6 +9,7 @@
 #include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -164,7 +165,7 @@ page_fault (struct intr_frame *f)
     void* esp = user ? f->esp : cur->esp;
     if (
       (fault_addr == esp - 4 || fault_addr == esp - 32 || esp <= fault_addr) &&
-      (fault_addr < PHYS_BASE)
+      (fault_addr < PHYS_BASE && (unsigned long)(PHYS_BASE - fault_addr) <= 8 * 1024 * 1024)
     ) {
       page_table_append(&cur->page_table, upage);
     }
@@ -192,6 +193,11 @@ load_page(void *upage)
   if(pte == NULL) goto FAIL;
   void *ppage = frame_allocate(PAL_USER, upage);
   if(ppage == NULL) PANIC ("frame_allocate returned null");
+  if (pte->swap_slot != EMPTY_SWAP_SLOT) {
+    swap_in(ppage, pte->swap_slot);
+    pte->swap_slot = EMPTY_SWAP_SLOT;
+  }
+
   if(!pagedir_set_page(cur->pagedir, pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
 
   return true;

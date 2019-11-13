@@ -1,6 +1,7 @@
 #include <debug.h>
 #include <stdio.h>
 #include "vm/page.h"
+#include "vm/swap.h"
 #include "lib/kernel/hash.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
@@ -8,7 +9,6 @@
 static unsigned hash_func(const struct hash_elem *e, void *aux);
 static bool less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux);
 static void destroy_func(struct hash_elem *elem, void *aux UNUSED);
-bool page_table_append(struct hash *page_table, void *upage);
 
 static unsigned
 hash_func(const struct hash_elem *elem, void *aux UNUSED)
@@ -44,19 +44,18 @@ page_table_destory(struct hash *page_table)
   hash_destroy(page_table, destroy_func);
 }
 
-bool
+struct page_table_entry*
 page_table_append(struct hash *page_table, void *upage)
 {
-  ASSERT (is_user_vaddr (upage));
-  if(upage == NULL) return false;
   struct page_table_entry *pte = malloc(sizeof(struct page_table_entry));
   pte->upage = upage;
+  pte->swap_slot = EMPTY_SWAP_SLOT;
   struct hash_elem *old = hash_insert(page_table, &pte->elem);
   if (old != NULL) {
     free(pte);
-    return false;
+    return hash_entry(old, struct page_table_entry, elem);;
   }
-  return true;
+  return pte;
 }
 
 struct page_table_entry*

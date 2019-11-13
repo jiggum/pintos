@@ -8,8 +8,10 @@ struct frame_table_entry {
   void *upage;
   void *ppage;
   struct hash_elem elem;
+  struct list_elem elem_l;
 };
 
 void frame_init ();
 void* frame_allocate(enum palloc_flags, void* upage);
 void frame_free(void *ppage);
+void frame_free_with_ppage(void *ppage);
