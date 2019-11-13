@@ -3,7 +3,6 @@
 #include "lib/kernel/hash.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
-#include "threads/vaddr.h"
 
 static unsigned hash_func (const struct hash_elem *e, void *aux);
 static bool less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux);
@@ -31,28 +30,28 @@ frame_init ()
 }
 
 void*
-frame_allocate(enum palloc_flags flags)
+frame_allocate(enum palloc_flags flags, void* upage)
 {
-  void *upage = palloc_get_page(flags);
+  void *ppage = palloc_get_page(flags);
   struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
 
   if (upage == NULL) PANIC ("page from palloc_get_page is NULL");
   if (fte == NULL) PANIC ("fte from malloc is NULL");
 
   fte->upage = upage;
-  fte->ppage = (void *)vtop(upage);
+  fte->ppage = ppage;
   hash_insert (&frame_table, &fte->elem);
 
-  return upage;
+  return ppage;
 }
 
 void
-frame_free(void *upage)
+frame_free(void *ppage)
 {
   struct frame_table_entry fte_query;
   struct frame_table_entry *fte;
   struct hash_elem *elem;
-  fte_query.ppage = (void *)vtop(upage);
+  fte_query.ppage = ppage;
   elem = hash_find(&frame_table, &fte_query.elem);
   ASSERT(elem != NULL);
   fte = hash_entry(elem, struct frame_table_entry, elem);

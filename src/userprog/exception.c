@@ -190,7 +190,7 @@ load_page(void *upage)
   struct thread *cur = thread_current ();
   struct page_table_entry *pte = page_table_find(&cur->page_table, upage);
   if(pte == NULL) goto FAIL;
-  void *ppage = frame_allocate(PAL_USER);
+  void *ppage = frame_allocate(PAL_USER, upage);
   if(ppage == NULL) PANIC ("frame_allocate returned null");
   if(!pagedir_set_page(cur->pagedir, pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
 

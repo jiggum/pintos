@@ -453,7 +453,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = frame_allocate (PAL_USER);
+      uint8_t *kpage = frame_allocate (PAL_USER, upage);
       if (kpage == NULL)
         return false;
 
@@ -486,12 +486,13 @@ static bool
 setup_stack (void **esp, struct cmd *cmd)
 {
   uint8_t *kpage;
+  void *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
   bool success = false;
 
-  kpage = frame_allocate (PAL_USER | PAL_ZERO);
+  kpage = frame_allocate (PAL_USER | PAL_ZERO, upage);
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      success = install_page (upage, kpage, true);
       if (success)
         build_esp(esp, cmd);
       else
