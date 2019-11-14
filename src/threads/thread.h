@@ -28,6 +28,16 @@ typedef int tid_t;
 
 #define EMPTY_PRIORITY -1
 
+struct process_control_block
+{
+  int exit_status;
+  bool waiting;
+  bool exited;
+  tid_t tid;
+  struct list_elem elem;
+  struct lock lock;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -104,16 +114,15 @@ struct thread
     struct list locks;
 
     struct list childs;
-    struct list_elem child_elem;
     struct thread *parent;
     struct semaphore child_sema;
     struct semaphore parent_sema;
     struct semaphore execute_sema;
-    int exit_status;
 
     struct list file_descriptors;
     struct file *file;
     bool load_success;
+    struct process_control_block *pcb;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
