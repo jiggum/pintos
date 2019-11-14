@@ -199,13 +199,14 @@ void
 syscall_exit (int status) {
   struct thread *cur = thread_current ();
 
-  cur->exit_status = status;
-
   printf("%s: exit(%d)\n",thread_name(), status);
+  cur->pcb->exit_status = status;
 
-  sema_down(&cur->child_sema);
-  sema_up(&cur->parent->parent_sema);
-  sema_down(&cur->child_sema);
+  lock_acquire(&cur->pcb->lock);
+  cur->pcb->exited = true;
+  if (cur->pcb->waiting) sema_up(&cur->parent->parent_sema);
+  lock_release(&cur->pcb->lock);
+
   thread_exit ();
 }
 

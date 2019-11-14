@@ -111,7 +111,7 @@ process_wait (tid_t child_tid)
 {
   struct thread *cur = thread_current ();
   struct list_elem *e;
-  struct thread *child_t = NULL;
+  struct process_control_block *child_pcb = NULL;
   bool valid_tid = false;
   int exit_status;
 
@@ -120,21 +120,27 @@ process_wait (tid_t child_tid)
     e != list_end (&cur->childs);
     e = list_next (e))
   {
-    child_t = list_entry (e, struct thread, child_elem);
-    if (child_tid == child_t->tid) {
+    child_pcb = list_entry (e, struct process_control_block, elem);
+    if (child_tid == child_pcb->tid) {
       valid_tid = true;
       break;
     }
   }
   if (!valid_tid) goto invalid_tid;
 
-  sema_up(&child_t->child_sema);
+  list_remove(e);
 
-  sema_down(&cur->parent_sema);
-  exit_status = child_t->exit_status;
-  list_remove(&child_t->child_elem);
-  sema_up(&child_t->child_sema);
-  sema_down(&cur->parent_sema);
+  lock_acquire(&child_pcb->lock);
+  child_pcb->waiting = true;
+  if (!child_pcb->exited) {
+    lock_release(&child_pcb->lock);
+    sema_down(&cur->parent_sema);
+  } else {
+    lock_release(&child_pcb->lock);
+  }
+
+  exit_status = child_pcb->exit_status;
+  free(child_pcb);
 
   return exit_status;
 
@@ -151,7 +157,6 @@ process_exit (void)
 
   file_close (cur->file);
   free_file_descriptors();
-  sema_up(&cur->parent->parent_sema);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
