@@ -39,6 +39,12 @@ swap_in(void *buffer, size_t swap_slot)
   bitmap_set(swap_slot_usage, swap_slot, false);
 }
 
+void
+swap_free(size_t swap_slot)
+{
+  bitmap_set(swap_slot_usage, swap_slot, false);
+}
+
 static void
 swap_slot_write(const void *buffer, size_t swap_slot)
 {

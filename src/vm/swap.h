@@ -8,3 +8,4 @@
 void swap_init();
 size_t swap_out(void *buffer);
 void swap_in(void *buffer, size_t swap_slot);
+void swap_free(size_t swap_slot);

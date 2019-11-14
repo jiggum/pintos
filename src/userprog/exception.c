@@ -199,6 +199,7 @@ load_page(void *upage)
   }
 
   if(!pagedir_set_page(cur->pagedir, pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
+  page_table_remove(&cur->page_table, pte);
 
   return true;
   FAIL:

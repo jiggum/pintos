@@ -10,6 +10,7 @@ struct page_table_entry {
 };
 
 struct hash* page_table_init(struct hash *page_table);
-void page_table_destory(struct hash *page_table);
+void page_table_destroy(struct hash *page_table);
 struct page_table_entry* page_table_append(struct hash *page_table, void *upage);
 struct page_table_entry* page_table_find(struct hash* page_table, void *upage);
+void page_table_remove(struct hash *page_table, struct page_table_entry *pte);

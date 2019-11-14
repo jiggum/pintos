@@ -5,6 +5,7 @@
 #include "lib/kernel/hash.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
 
 static unsigned hash_func(const struct hash_elem *e, void *aux);
 static bool less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux);
@@ -28,6 +29,18 @@ static void
 destroy_func(struct hash_elem *elem, void *aux UNUSED)
 {
   struct page_table_entry *pte = hash_entry(elem, struct page_table_entry, elem);
+
+  if (pte->swap_slot == EMPTY_SWAP_SLOT) {
+    swap_free(pte->swap_slot);
+  }
+
+  free(pte);
+}
+
+void
+page_table_remove(struct hash *page_table, struct page_table_entry *pte)
+{
+  hash_delete(page_table, &pte->elem);
   free(pte);
 }
 
@@ -39,7 +52,7 @@ page_table_init(struct hash *page_table)
 }
 
 void
-page_table_destory(struct hash *page_table)
+page_table_destroy(struct hash *page_table)
 {
   hash_destroy(page_table, destroy_func);
 }
@@ -53,7 +66,7 @@ page_table_append(struct hash *page_table, void *upage)
   struct hash_elem *old = hash_insert(page_table, &pte->elem);
   if (old != NULL) {
     free(pte);
-    return hash_entry(old, struct page_table_entry, elem);;
+    return hash_entry(old, struct page_table_entry, elem);
   }
   return pte;
 }

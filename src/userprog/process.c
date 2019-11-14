@@ -157,6 +157,8 @@ process_exit (void)
 
   file_close (cur->file);
   free_file_descriptors();
+
+  page_table_destroy(&cur->page_table);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -173,7 +175,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  page_table_destory(&cur->page_table);
 }
 
 /* Sets up the CPU for running user code in the current
