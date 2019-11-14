@@ -77,6 +77,7 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 static void thread_set_priority_silly (int);
+static struct process_control_block* create_pcb();
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -190,6 +191,8 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->pcb = create_pcb(tid);
+  list_push_back (&t->parent->childs, &t->pcb->elem);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -507,7 +510,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent = running_thread();
   list_init (&t->locks);
   list_init (&t->childs);
-  list_push_back (&t->parent->childs, &t->child_elem);
   sema_init (&t->child_sema, 0);
   sema_init (&t->parent_sema, 0);
   sema_init (&t->execute_sema, 0);
@@ -774,4 +776,15 @@ free_file_descriptors()
     file_close(file_d->file);
     free(file_d);
   }
+}
+
+static struct process_control_block*
+create_pcb(tid_t tid)
+{
+  struct process_control_block *pcb = (struct process_control_block *)malloc(sizeof(struct process_control_block));
+  pcb->exited = false;
+  pcb->waiting = false;
+  pcb->tid = tid;
+  lock_init(&pcb->lock);
+  return pcb;
 }
