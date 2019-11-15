@@ -76,7 +76,7 @@ frame_free(void *ppage)
   struct hash_elem *elem;
   fte_query.ppage = ppage;
   elem = hash_find(&frame_table, &fte_query.elem);
-  ASSERT(elem != NULL);
+  if (elem == NULL) return;
   fte = hash_entry(elem, struct frame_table_entry, elem);
   hash_delete(&frame_table, &fte->elem);
   list_remove(&fte->elem_l);
