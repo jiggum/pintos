@@ -37,6 +37,7 @@ struct process_control_block
   tid_t tid;
   struct list_elem elem;
   struct lock lock;
+  struct semaphore sema;
 };
 
 /* A kernel thread or user process.
@@ -116,8 +117,6 @@ struct thread
 
     struct list childs;
     struct thread *parent;
-    struct semaphore child_sema;
-    struct semaphore parent_sema;
     struct semaphore execute_sema;
 
     struct list file_descriptors;

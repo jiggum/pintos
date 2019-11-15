@@ -204,7 +204,7 @@ syscall_exit (int status) {
 
   lock_acquire(&cur->pcb->lock);
   cur->pcb->exited = true;
-  if (cur->pcb->waiting) sema_up(&cur->parent->parent_sema);
+  if (cur->pcb->waiting) sema_up(&cur->pcb->sema);
   lock_release(&cur->pcb->lock);
 
   thread_exit ();

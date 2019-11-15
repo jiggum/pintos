@@ -42,12 +42,12 @@ frame_init ()
 void*
 frame_allocate(enum palloc_flags flags, void* upage)
 {
+  struct thread *cur = thread_current ();
   void *ppage = palloc_get_page(flags);
 
   if (ppage == NULL) {
-    struct thread *cur = thread_current ();
     struct frame_table_entry *evict_frame = get_next_evict_frame(cur->pagedir);
-    pagedir_clear_page(cur->pagedir, evict_frame->upage);
+    pagedir_clear_page(evict_frame->pd, evict_frame->upage);
     struct page_table_entry* pte = page_table_append(&cur->page_table, evict_frame->upage);
     pte->swap_slot = swap_out(evict_frame->ppage);
     frame_free_with_ppage(evict_frame->ppage);
@@ -61,6 +61,7 @@ frame_allocate(enum palloc_flags flags, void* upage)
 
   fte->upage = upage;
   fte->ppage = ppage;
+  fte->pd = cur->pagedir;
   hash_insert (&frame_table, &fte->elem);
   list_push_back(&frame_list, &fte->elem_l);
 

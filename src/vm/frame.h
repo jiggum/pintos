@@ -2,6 +2,7 @@
 #define PINTOS_FRAME_H
 #include "lib/kernel/hash.h"
 #include "threads/palloc.h"
+#include "userprog/pagedir.h"
 #endif
 
 struct frame_table_entry {
@@ -9,6 +10,7 @@ struct frame_table_entry {
   void *ppage;
   struct hash_elem elem;
   struct list_elem elem_l;
+  uint32_t *pd;
 };
 
 void frame_init ();

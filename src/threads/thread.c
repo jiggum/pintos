@@ -510,8 +510,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent = running_thread();
   list_init (&t->locks);
   list_init (&t->childs);
-  sema_init (&t->child_sema, 0);
-  sema_init (&t->parent_sema, 0);
   sema_init (&t->execute_sema, 0);
   list_init (&t->file_descriptors);
 
@@ -786,5 +784,6 @@ create_pcb(tid_t tid)
   pcb->waiting = false;
   pcb->tid = tid;
   lock_init(&pcb->lock);
+  sema_init(&pcb->sema, 0);
   return pcb;
 }

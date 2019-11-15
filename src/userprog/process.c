@@ -134,7 +134,7 @@ process_wait (tid_t child_tid)
   child_pcb->waiting = true;
   if (!child_pcb->exited) {
     lock_release(&child_pcb->lock);
-    sema_down(&cur->parent_sema);
+    sema_down(&child_pcb->sema);
   } else {
     lock_release(&child_pcb->lock);
   }
