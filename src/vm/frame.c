@@ -7,12 +7,13 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "userprog/pagedir.h"
+#include "threads/synch.h"
 #include "vm/swap.h"
 #include "vm/page.h"
 
 static unsigned hash_func (const struct hash_elem *e, void *aux);
 static bool less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux);
-static struct frame_table_entry* get_next_evict_frame(uint32_t *pagedir);
+static struct frame_table_entry* get_next_evict_frame();
 
 static struct hash frame_table;
 static struct list frame_list;
@@ -37,18 +38,20 @@ frame_init ()
 {
   hash_init(&frame_table, hash_func, less_func, NULL);
   list_init(&frame_list);
+  lock_init(&frame_lock);
 }
 
 void*
 frame_allocate(enum palloc_flags flags, void* upage)
 {
+  lock_acquire(&frame_lock);
   struct thread *cur = thread_current ();
   void *ppage = palloc_get_page(flags);
 
   if (ppage == NULL) {
-    struct frame_table_entry *evict_frame = get_next_evict_frame(cur->pagedir);
-    pagedir_clear_page(evict_frame->pd, evict_frame->upage);
-    struct page_table_entry* pte = page_table_append(&cur->page_table, evict_frame->upage);
+    struct frame_table_entry *evict_frame = get_next_evict_frame();
+    pagedir_clear_page(evict_frame->thread->pagedir, evict_frame->upage);
+    struct page_table_entry* pte = page_table_append(&evict_frame->thread->page_table, evict_frame->upage);
     pte->swap_slot = swap_out(evict_frame->ppage);
     frame_free_with_ppage(evict_frame->ppage);
     ppage = palloc_get_page(flags);
@@ -61,9 +64,10 @@ frame_allocate(enum palloc_flags flags, void* upage)
 
   fte->upage = upage;
   fte->ppage = ppage;
-  fte->pd = cur->pagedir;
+  fte->thread = cur;
   hash_insert (&frame_table, &fte->elem);
   list_push_back(&frame_list, &fte->elem_l);
+  lock_release(&frame_lock);
 
   return ppage;
 }
@@ -91,7 +95,7 @@ frame_free_with_ppage(void *ppage)
 }
 
 static struct frame_table_entry*
-get_next_evict_frame(uint32_t *pagedir)
+get_next_evict_frame()
 {
   if(frame_list_evict_pointer == NULL) frame_list_evict_pointer = list_begin(&frame_list);
 
@@ -104,7 +108,7 @@ get_next_evict_frame(uint32_t *pagedir)
       frame_list_evict_pointer = list_begin(&frame_list);
     }
 
-    if(!pagedir_is_accessed(pagedir, fte->upage)) return fte;
-    pagedir_set_accessed(pagedir, fte->upage, false);
+    if(!pagedir_is_accessed(fte->thread->pagedir, fte->upage)) return fte;
+    pagedir_set_accessed(fte->thread->pagedir, fte->upage, false);
   }
 }

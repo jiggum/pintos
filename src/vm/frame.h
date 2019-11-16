@@ -3,6 +3,7 @@
 #include "lib/kernel/hash.h"
 #include "threads/palloc.h"
 #include "userprog/pagedir.h"
+#include "threads/thread.h"
 #endif
 
 struct frame_table_entry {
@@ -10,10 +11,12 @@ struct frame_table_entry {
   void *ppage;
   struct hash_elem elem;
   struct list_elem elem_l;
-  uint32_t *pd;
+  struct thread *thread;
 };
 
 void frame_init ();
 void* frame_allocate(enum palloc_flags, void* upage);
 void frame_free(void *ppage);
 void frame_free_with_ppage(void *ppage);
+
+struct lock frame_lock;

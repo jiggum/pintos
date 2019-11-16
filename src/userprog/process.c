@@ -152,13 +152,20 @@ process_wait (tid_t child_tid)
 void
 process_exit (void)
 {
+  lock_acquire(&frame_lock);
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
   file_close (cur->file);
   free_file_descriptors();
 
+  lock_acquire(&cur->pcb->lock);
+  cur->pcb->exited = true;
+  if (cur->pcb->waiting) sema_up(&cur->pcb->sema);
+  lock_release(&cur->pcb->lock);
+
   page_table_destroy(&cur->page_table);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -175,6 +182,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  lock_release(&frame_lock);
 }
 
 /* Sets up the CPU for running user code in the current

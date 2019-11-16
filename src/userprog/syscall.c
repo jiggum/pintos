@@ -33,7 +33,7 @@ static void close_ (int fd);
 static void syscall_lock_acquire (void);
 static void syscall_lock_release (void);
 static int get_user (const uint8_t *uaddr);
-static void validate_user(const uint8_t *uaddr);
+static bool validate_user(const uint8_t *uaddr);
 
 struct lock lock;
 
@@ -110,7 +110,6 @@ syscall_switch (struct intr_frame *f)
       return wait_(*(pid_t *)arg[0]);
     case SYS_CREATE:
       validate_user(*(uint8_t **)arg[0]);
-      validate_user(*(uint8_t **)arg[0] + *(unsigned int *)arg[1] - 1);
       return create_(
         *(char **)arg[0],
         *(unsigned int *)arg[1]
@@ -159,12 +158,7 @@ syscall_switch (struct intr_frame *f)
 static void
 validate_addr(const void *addr, size_t size) {
   const void *addr_last_byte = addr + size - 1;
-  if (
-    !is_user_vaddr(addr) ||
-    !is_user_vaddr(addr_last_byte) ||
-    !pagedir_get_page(thread_current()->pagedir, addr) ||
-    !pagedir_get_page(thread_current()->pagedir, addr_last_byte)
-  ) syscall_exit(-1);
+  if (validate_user(addr)) validate_user(addr_last_byte);
 }
 
 static void
@@ -202,11 +196,6 @@ syscall_exit (int status) {
   printf("%s: exit(%d)\n",thread_name(), status);
   cur->pcb->exit_status = status;
 
-  lock_acquire(&cur->pcb->lock);
-  cur->pcb->exited = true;
-  if (cur->pcb->waiting) sema_up(&cur->pcb->sema);
-  lock_release(&cur->pcb->lock);
-
   thread_exit ();
 }
 
@@ -219,13 +208,19 @@ wait_ (pid_t pid)
 static bool
 create_ (const char *file, unsigned initial_size)
 {
-  return filesys_create(file, initial_size);
+  syscall_lock_acquire();
+  bool res = filesys_create(file, initial_size);
+  syscall_lock_release();
+  return res;
 }
 
 static bool
 remove_ (const char *file)
 {
-  return filesys_remove(file);
+  syscall_lock_acquire();
+  bool res = filesys_remove(file);
+  syscall_lock_release();
+  return res;
 }
 
 static int
@@ -250,8 +245,11 @@ open_ (const char *file)
 static int
 filesize_ (int fd)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  return file_length(file_d->file);
+  off_t res = file_length(file_d->file);
+  syscall_lock_release();
+  return res;
 }
 
 static int
@@ -307,25 +305,35 @@ write_ (int fd, const void *buffer, unsigned size) {
 static void
 seek_ (int fd, unsigned position)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
   file_seek(file_d->file, position);
+  syscall_lock_release();
 }
 
 static unsigned
 tell_ (int fd)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  return file_tell(file_d->file);
+  int res = file_tell(file_d->file);
+  syscall_lock_release();
+  return res;
 }
 
 static void
 close_ (int fd)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  if (file_d == NULL) return;
+  if (file_d == NULL) {
+    syscall_lock_release();
+    return;
+  }
   file_close(file_d->file);
   list_remove(&file_d->elem);
   free(file_d);
+  syscall_lock_release();
 }
 
 static void
@@ -354,7 +362,11 @@ get_user (const uint8_t *uaddr)
   return result;
 }
 
-static void
+static bool
 validate_user(const uint8_t *uaddr) {
-  if ((void*)uaddr >= PHYS_BASE || get_user(uaddr) == -1) syscall_exit(-1);
+  if ((void*)uaddr >= PHYS_BASE || get_user(uaddr) == -1) {
+    syscall_exit(-1);
+    return false;
+  }
+  return true;
 }
