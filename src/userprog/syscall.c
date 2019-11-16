@@ -30,8 +30,6 @@ static int write_ (int fd, const void *buffer, unsigned size);
 static void seek_ (int fd, unsigned position);
 static unsigned tell_ (int fd);
 static void close_ (int fd);
-static void syscall_lock_acquire (void);
-static void syscall_lock_release (void);
 static int get_user (const uint8_t *uaddr);
 static bool validate_user(const uint8_t *uaddr);
 
@@ -178,14 +176,16 @@ exec_ (const char *cmd_line)
     !cmd_init(cmd, cmd_line) ||
     !filesys_lookup(cmd->name)
   ) {
+    syscall_lock_release();
     res = -1;
     goto done;
+  } else {
+    syscall_lock_release();
   }
   res = process_execute(cmd_line);
 
   done:
     free_cmd (cmd);
-    syscall_lock_release();
     return res;
 }
 
@@ -336,13 +336,13 @@ close_ (int fd)
   syscall_lock_release();
 }
 
-static void
+void
 syscall_lock_acquire (void)
 {
   lock_acquire(&lock);
 }
 
-static void
+void
 syscall_lock_release (void)
 {
   lock_release(&lock);

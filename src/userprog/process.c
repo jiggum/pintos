@@ -21,6 +21,7 @@
 #include "threads/synch.h"
 #include "vm/frame.h"
 #include "vm/page.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct cmd *cmd, void (**eip) (void), void **esp);
@@ -277,6 +278,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (struct cmd *cmd, void (**eip) (void), void **esp)
 {
+
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -290,6 +292,7 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
   page_table_init(&t->page_table);
   process_activate ();
 
+  syscall_lock_acquire();
   /* Open executable file. */
   file = filesys_open (cmd->name);
   if (file == NULL) 
@@ -383,6 +386,7 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
   t->file = file;
   file_deny_write(file);
+  syscall_lock_release();
   return success;
 }
 
