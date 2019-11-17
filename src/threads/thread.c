@@ -77,7 +77,7 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 static void thread_set_priority_silly (int);
-static struct process_control_block* create_pcb();
+static struct process_control_block* create_pcb(tid_t tid);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -761,7 +761,7 @@ get_file_descriptor(int fd)
 }
 
 void
-free_file_descriptors()
+free_file_descriptors(void)
 {
   struct thread *cur = thread_current ();
   struct list_elem *e;

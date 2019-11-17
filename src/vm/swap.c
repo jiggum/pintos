@@ -3,7 +3,7 @@
 #include "threads/vaddr.h"
 #include "lib/kernel/bitmap.h"
 #include "threads/synch.h"
-#include <stdio.h>
+#include "vm/swap.h"
 
 static struct block *swap_block;
 static unsigned long swap_slot_num;
@@ -16,7 +16,7 @@ static void swap_slot_read(void *buffer, size_t swap_slot);
 struct lock swap_lock;
 
 void
-swap_init()
+swap_init(void)
 {
   swap_block = block_get_role(BLOCK_SWAP);
   ASSERT(swap_block != NULL);

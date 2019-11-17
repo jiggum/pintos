@@ -476,7 +476,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          frame_free (kpage);
+          frame_free_with_ppage (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -484,7 +484,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          frame_free (kpage);
+          frame_free_with_ppage (kpage);
           return false; 
         }
 
@@ -512,7 +512,7 @@ setup_stack (void **esp, struct cmd *cmd)
       if (success)
         build_esp(esp, cmd);
       else
-        frame_free (kpage);
+        frame_free_with_ppage(kpage);
     }
 
 //  printf("\nhere!! name:%s\n", cmd->name);

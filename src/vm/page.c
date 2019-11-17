@@ -30,7 +30,7 @@ destroy_func(struct hash_elem *elem, void *aux UNUSED)
 {
   struct page_table_entry *pte = hash_entry(elem, struct page_table_entry, elem);
 
-  if (pte->swap_slot == EMPTY_SWAP_SLOT) {
+  if (pte->swap_slot == (size_t)EMPTY_SWAP_SLOT) {
     swap_free(pte->swap_slot);
   }
 

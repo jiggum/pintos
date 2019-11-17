@@ -15,7 +15,7 @@
 
 static unsigned hash_func (const struct hash_elem *e, void *aux);
 static bool less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux);
-static struct frame_table_entry* get_next_evict_frame();
+static struct frame_table_entry* get_next_evict_frame(void);
 static struct frame_table_entry* frame_find(void *ppage);
 
 static struct hash frame_table;
@@ -37,7 +37,7 @@ less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux
 }
 
 void
-frame_init ()
+frame_init (void)
 {
   hash_init(&frame_table, hash_func, less_func, NULL);
   list_init(&frame_list);
@@ -105,7 +105,7 @@ frame_find(void *ppage)
 }
 
 static struct frame_table_entry*
-get_next_evict_frame()
+get_next_evict_frame(void)
 {
   if(frame_list_evict_pointer == NULL) frame_list_evict_pointer = list_begin(&frame_list);
 
@@ -131,7 +131,6 @@ frames_preload(void *buffer, size_t size)
   void *upage_first = pg_round_down (buffer);
   void * upage;
   void * ppage;
-  struct frame_table_entry* fte;
   uint32_t *pd = thread_current()->pagedir;
 
   for (upage = upage_first; upage < buffer + size; upage += PGSIZE)
@@ -169,9 +168,9 @@ frame_load(void *upage)
   struct thread *cur = thread_current ();
   struct page_table_entry *pte = page_table_find(&cur->page_table, upage);
   if(pte == NULL) goto FAIL;
-  void *ppage = frame_allocate(PAL_USER | PAL_ZERO, upage);
+  void *ppage = frame_allocate(PAL_USER, upage);
   if(ppage == NULL) PANIC ("frame_allocate returned null");
-  if (pte->swap_slot != EMPTY_SWAP_SLOT) {
+  if (pte->swap_slot != (size_t)EMPTY_SWAP_SLOT) {
     swap_in(ppage, pte->swap_slot);
     pte->swap_slot = EMPTY_SWAP_SLOT;
   }
