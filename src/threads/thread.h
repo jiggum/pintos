@@ -7,6 +7,7 @@
 #include "threads/synch.h"
 #include "filesys/file.h"
 #include "lib/kernel/hash.h"
+#include "userprog/process.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -28,17 +29,6 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 #define EMPTY_PRIORITY -1
-
-struct process_control_block
-{
-  int exit_status;
-  bool waiting;
-  bool exited;
-  tid_t tid;
-  struct list_elem elem;
-  struct lock lock;
-  struct semaphore sema;
-};
 
 /* A kernel thread or user process.
 

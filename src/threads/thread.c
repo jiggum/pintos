@@ -77,7 +77,6 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 static void thread_set_priority_silly (int);
-static struct process_control_block* create_pcb(tid_t tid);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -774,16 +773,4 @@ free_file_descriptors(void)
     file_close(file_d->file);
     free(file_d);
   }
-}
-
-static struct process_control_block*
-create_pcb(tid_t tid)
-{
-  struct process_control_block *pcb = (struct process_control_block *)malloc(sizeof(struct process_control_block));
-  pcb->exited = false;
-  pcb->waiting = false;
-  pcb->tid = tid;
-  lock_init(&pcb->lock);
-  sema_init(&pcb->sema, 0);
-  return pcb;
 }

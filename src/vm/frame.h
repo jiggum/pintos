@@ -18,7 +18,6 @@ struct frame_table_entry {
 void frame_init (void);
 void* frame_allocate(enum palloc_flags, void* upage);
 void frame_free(void *ppage);
-void frame_free_with_ppage(void *ppage);
 void frames_preload(void *buffer, size_t size);
 void frames_set_pinned(void *addr, size_t size, bool pinned);
 bool frame_load(void *upage);

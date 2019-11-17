@@ -3,6 +3,7 @@
 #include "vm/frame.h"
 #include "lib/kernel/hash.h"
 #include "lib/kernel/list.h"
+#include "lib/string.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
@@ -17,6 +18,8 @@ static unsigned hash_func (const struct hash_elem *e, void *aux);
 static bool less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux);
 static struct frame_table_entry* get_next_evict_frame(void);
 static struct frame_table_entry* frame_find(void *ppage);
+static struct frame_table_entry* frame_create(void* ppage, void* upage, struct thread* thread, bool pinned);
+static void frame_update(struct frame_table_entry* fte, void* upage, struct thread* thread, bool pinned);
 
 static struct hash frame_table;
 static struct list frame_list;
@@ -36,6 +39,25 @@ less_func(const struct hash_elem *left, const struct hash_elem *right, void *aux
   return ftel->ppage < fter->ppage;
 }
 
+static struct frame_table_entry*
+frame_create(void* ppage, void* upage, struct thread* thread, bool pinned)
+{
+  struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
+  fte->ppage = ppage;
+  fte->upage = upage;
+  fte->thread = thread;
+  fte->pinned = pinned;
+  return fte;
+}
+
+static void
+frame_update(struct frame_table_entry* fte, void* upage, struct thread* thread, bool pinned)
+{
+  fte->upage = upage;
+  fte->thread = thread;
+  fte->pinned = pinned;
+}
+
 void
 frame_init (void)
 {
@@ -48,6 +70,7 @@ void*
 frame_allocate(enum palloc_flags flags, void* upage)
 {
   lock_acquire(&frame_lock);
+  struct frame_table_entry *fte;
   struct thread *cur = thread_current ();
   void *ppage = palloc_get_page(flags);
 
@@ -56,21 +79,15 @@ frame_allocate(enum palloc_flags flags, void* upage)
     pagedir_clear_page(evict_frame->thread->pagedir, evict_frame->upage);
     struct page_table_entry* pte = page_table_append(&evict_frame->thread->page_table, evict_frame->upage);
     pte->swap_slot = swap_out(evict_frame->ppage);
-    frame_free_with_ppage(evict_frame->ppage);
-    ppage = palloc_get_page(flags);
+    fte = frame_find(evict_frame->ppage);
+    frame_update(fte, upage, cur, false);
+    ppage = fte->ppage;
+    palloc_format (ppage, flags);
+  } else {
+    fte = frame_create(ppage, upage, cur, false);
+    hash_insert (&frame_table, &fte->elem);
+    list_push_back(&frame_list, &fte->elem_l);
   }
-
-  if (ppage == NULL) PANIC ("ppage from frame_allocate is NULL");
-
-  struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
-  if (fte == NULL) PANIC ("fte from malloc is NULL");
-
-  fte->upage = upage;
-  fte->ppage = ppage;
-  fte->thread = cur;
-  fte->pinned = false;
-  hash_insert (&frame_table, &fte->elem);
-  list_push_back(&frame_list, &fte->elem_l);
   lock_release(&frame_lock);
 
   return ppage;
@@ -84,12 +101,6 @@ frame_free(void *ppage)
   hash_delete(&frame_table, &fte->elem);
   list_remove(&fte->elem_l);
   free(fte);
-}
-
-void
-frame_free_with_ppage(void *ppage)
-{
-  frame_free(ppage);
   palloc_free_page(ppage);
 }
 
@@ -174,13 +185,10 @@ frame_load(void *upage)
     swap_in(ppage, pte->swap_slot);
     pte->swap_slot = EMPTY_SWAP_SLOT;
   }
-
-  if(!install_page(pte->upage, ppage, true)) {
-    frame_free_with_ppage (ppage);
-    PANIC ("pagedir_set_page returned false");
-  }
+  if(!install_page(pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
   page_table_remove(&cur->page_table, pte);
   return true;
+
   FAIL:
-  return false;
+    return false;
 };

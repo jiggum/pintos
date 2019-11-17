@@ -34,18 +34,12 @@ static bool build_esp (void **esp, struct cmd *cmd);
 tid_t
 process_execute (const char *cmd_line)
 {
-  char *cmd_line_copy = NULL;
   struct cmd *cmd;
   tid_t tid;
   struct thread *cur = thread_current ();
 
   cmd = palloc_get_page (0);
   if (!cmd_init(cmd, cmd_line)) goto tid_error;
-  /* Make a copy of command line.
-     Otherwise there's a race between the caller and load(). */
-  cmd_line_copy = palloc_get_page (0);
-  if (cmd_line_copy == NULL) goto tid_error;
-  strlcpy (cmd_line_copy, cmd_line, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (cmd->name, PRI_DEFAULT, start_process, cmd);
@@ -53,12 +47,10 @@ process_execute (const char *cmd_line)
 
   sema_down(&cur->execute_sema);
   if (!cur->load_success) tid = TID_ERROR;
-  palloc_free_page(cmd_line_copy);
 
   return tid;
 
   tid_error:
-    if (cmd_line_copy) palloc_free_page (cmd_line_copy);
     if (cmd) free_cmd (cmd);
     return TID_ERROR;
 }
@@ -476,7 +468,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          frame_free_with_ppage (kpage);
+          frame_free (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -484,7 +476,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          frame_free_with_ppage (kpage);
+          frame_free (kpage);
           return false; 
         }
 
@@ -512,7 +504,7 @@ setup_stack (void **esp, struct cmd *cmd)
       if (success)
         build_esp(esp, cmd);
       else
-        frame_free_with_ppage(kpage);
+        frame_free(kpage);
     }
 
 //  printf("\nhere!! name:%s\n", cmd->name);
@@ -631,4 +623,16 @@ build_esp (void **esp, struct cmd *cmd)
     success = false;
     free(arg_addrs);
     return success;
+}
+
+struct process_control_block*
+create_pcb(int tid)
+{
+  struct process_control_block *pcb = (struct process_control_block *)malloc(sizeof(struct process_control_block));
+  pcb->exited = false;
+  pcb->waiting = false;
+  pcb->tid = tid;
+  lock_init(&pcb->lock);
+  sema_init(&pcb->sema, 0);
+  return pcb;
 }
