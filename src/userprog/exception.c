@@ -6,7 +6,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "userprog/pagedir.h"
+#include "userprog/process.h"
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
@@ -169,7 +169,7 @@ page_fault (struct intr_frame *f)
     ) {
       page_table_append(&cur->page_table, upage);
     }
-    if (load_page(upage)) return;
+    if (frame_load(upage)) return;
   }
 
   syscall_exit (-1);
@@ -184,24 +184,3 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
 }
-
-static bool
-load_page(void *upage)
-{
-  struct thread *cur = thread_current ();
-  struct page_table_entry *pte = page_table_find(&cur->page_table, upage);
-  if(pte == NULL) goto FAIL;
-  void *ppage = frame_allocate(PAL_USER, upage);
-  if(ppage == NULL) PANIC ("frame_allocate returned null");
-  if (pte->swap_slot != EMPTY_SWAP_SLOT) {
-    swap_in(ppage, pte->swap_slot);
-    pte->swap_slot = EMPTY_SWAP_SLOT;
-  }
-
-  if(!pagedir_set_page(cur->pagedir, pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
-  page_table_remove(&cur->page_table, pte);
-
-  return true;
-  FAIL:
-    return false;
-};

@@ -13,6 +13,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "lib/user/syscall.h"
+#include "vm/frame.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
@@ -255,6 +256,8 @@ filesize_ (int fd)
 static int
 read_ (int fd, void *buffer, unsigned size)
 {
+  frames_preload(buffer, size);
+  frames_set_pinned(buffer, size, true);
   int res;
   syscall_lock_acquire();
   if (fd == 0) {
@@ -274,6 +277,7 @@ read_ (int fd, void *buffer, unsigned size)
 
   done:
     syscall_lock_release();
+    frames_set_pinned(buffer, size, false);
     return res;
 }
 

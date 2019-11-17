@@ -19,3 +19,4 @@ struct cmd
 
 bool cmd_init (struct cmd *cmd, const char *cmd_line);
 void free_cmd (struct cmd *cmd);
+bool install_page (void *upage, void *kpage, bool writable);
