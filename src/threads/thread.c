@@ -77,7 +77,6 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static bool compare_release_tick_low (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 static void thread_set_priority_silly (int);
-static struct process_control_block* create_pcb();
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -510,10 +509,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent = running_thread();
   list_init (&t->locks);
   list_init (&t->childs);
-  sema_init (&t->child_sema, 0);
-  sema_init (&t->parent_sema, 0);
   sema_init (&t->execute_sema, 0);
   list_init (&t->file_descriptors);
+  list_init (&t->mmap_descriptors);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -763,7 +761,7 @@ get_file_descriptor(int fd)
 }
 
 void
-free_file_descriptors()
+free_file_descriptors(void)
 {
   struct thread *cur = thread_current ();
   struct list_elem *e;
@@ -778,13 +776,68 @@ free_file_descriptors()
   }
 }
 
-static struct process_control_block*
-create_pcb(tid_t tid)
+int
+get_next_md (struct thread *t)
 {
-  struct process_control_block *pcb = (struct process_control_block *)malloc(sizeof(struct process_control_block));
-  pcb->exited = false;
-  pcb->waiting = false;
-  pcb->tid = tid;
-  lock_init(&pcb->lock);
-  return pcb;
+  struct list_elem *e;
+  int next_md = 1;
+  for (
+    e = list_begin (&t->mmap_descriptors);
+    e != list_end (&t->mmap_descriptors);
+    e = list_next (e), next_md++
+    ) {
+    struct mmap_descriptor *mmap_d = list_entry (e, struct mmap_descriptor, elem);
+    ASSERT(mmap_d->md >= next_md);
+    if (next_md != mmap_d->md) break;
+  }
+  return next_md;
+}
+
+struct mmap_descriptor*
+get_mmap_descriptor(mapid_t md)
+{
+  struct thread *cur = thread_current ();
+  struct mmap_descriptor *mmap_d = NULL;
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->mmap_descriptors);
+    e != list_end (&cur->mmap_descriptors);
+    e = list_next (e)
+    ) {
+    mmap_d = list_entry (e, struct mmap_descriptor, elem);
+    if (mmap_d->md == md) return mmap_d;
+  }
+  return NULL;
+}
+
+struct list_elem*
+free_mmap_descriptor(struct mmap_descriptor *mmap_d)
+{
+  struct list_elem *e;
+  for (
+    e = list_begin (&mmap_d->ptes);
+    e != list_end (&mmap_d->ptes);
+    ) {
+    struct page_table_entry *pte = list_entry (e, struct page_table_entry, md_elem);
+    e = list_remove(e);
+    page_file_unmap(pte);
+  }
+  struct list_elem *mmap_d_elem = list_remove (&mmap_d->elem);
+  file_close(mmap_d->file);
+  free(mmap_d);
+  return mmap_d_elem;
+}
+
+void
+free_mmap_descriptors(void)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  for (
+    e = list_begin (&cur->mmap_descriptors);
+    e != list_end (&cur->mmap_descriptors);
+    ) {
+    struct mmap_descriptor *mmap_d = list_entry (e, struct mmap_descriptor, elem);
+    e = free_mmap_descriptor(mmap_d);
+  }
 }

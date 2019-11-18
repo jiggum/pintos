@@ -5,6 +5,11 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/process.h"
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -144,12 +149,29 @@ page_fault (struct intr_frame *f)
   /* Count page faults. */
   page_fault_cnt++;
 
-  syscall_exit (-1);
-
   /* Determine cause. */
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+
+  struct thread *cur = thread_current ();
+
+  if(
+    not_present &&
+    fault_addr != NULL
+  ) {
+    void* upage = pg_round_down(fault_addr);
+    void* esp = user ? f->esp : cur->esp;
+    if (
+      (fault_addr == esp - 4 || fault_addr == esp - 32 || esp <= fault_addr) &&
+      (fault_addr < PHYS_BASE && (unsigned long)(PHYS_BASE - fault_addr) <= 8 * 1024 * 1024)
+    ) {
+      page_table_append(&cur->page_table, upage);
+    }
+    if (frame_load(upage)) return;
+  }
+
+  syscall_exit (-1);
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -161,4 +183,3 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
 }
-

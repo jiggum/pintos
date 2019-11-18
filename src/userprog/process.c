@@ -19,6 +19,9 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "vm/frame.h"
+#include "vm/page.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct cmd *cmd, void (**eip) (void), void **esp);
@@ -31,18 +34,12 @@ static bool build_esp (void **esp, struct cmd *cmd);
 tid_t
 process_execute (const char *cmd_line)
 {
-  char *cmd_line_copy = NULL;
   struct cmd *cmd;
   tid_t tid;
   struct thread *cur = thread_current ();
 
   cmd = palloc_get_page (0);
   if (!cmd_init(cmd, cmd_line)) goto tid_error;
-  /* Make a copy of command line.
-     Otherwise there's a race between the caller and load(). */
-  cmd_line_copy = palloc_get_page (0);
-  if (cmd_line_copy == NULL) goto tid_error;
-  strlcpy (cmd_line_copy, cmd_line, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (cmd->name, PRI_DEFAULT, start_process, cmd);
@@ -50,12 +47,10 @@ process_execute (const char *cmd_line)
 
   sema_down(&cur->execute_sema);
   if (!cur->load_success) tid = TID_ERROR;
-  palloc_free_page(cmd_line_copy);
 
   return tid;
 
   tid_error:
-    if (cmd_line_copy) palloc_free_page (cmd_line_copy);
     if (cmd) free_cmd (cmd);
     return TID_ERROR;
 }
@@ -132,7 +127,7 @@ process_wait (tid_t child_tid)
   child_pcb->waiting = true;
   if (!child_pcb->exited) {
     lock_release(&child_pcb->lock);
-    sema_down(&cur->parent_sema);
+    sema_down(&child_pcb->sema);
   } else {
     lock_release(&child_pcb->lock);
   }
@@ -150,11 +145,21 @@ process_wait (tid_t child_tid)
 void
 process_exit (void)
 {
+  lock_acquire(&frame_lock);
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
   file_close (cur->file);
+  free_mmap_descriptors();
   free_file_descriptors();
+
+  lock_acquire(&cur->pcb->lock);
+  cur->pcb->exited = true;
+  if (cur->pcb->waiting) sema_up(&cur->pcb->sema);
+  lock_release(&cur->pcb->lock);
+
+  page_table_destroy(&cur->page_table);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -171,6 +176,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  lock_release(&frame_lock);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -265,6 +271,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (struct cmd *cmd, void (**eip) (void), void **esp)
 {
+
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -274,10 +281,11 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
-    goto done;
+  if (t->pagedir == NULL) PANIC("t->pagedir is NULL");
+  page_table_init(&t->page_table);
   process_activate ();
 
+  syscall_lock_acquire();
   /* Open executable file. */
   file = filesys_open (cmd->name);
   if (file == NULL) 
@@ -371,12 +379,11 @@ load (struct cmd *cmd, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
   t->file = file;
   file_deny_write(file);
+  syscall_lock_release();
   return success;
 }
 
 /* load() helpers. */
-
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -445,7 +452,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -454,30 +460,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+      struct page_table_entry* pte = page_table_append(&thread_current()->page_table, upage);
+      page_file_map(pte, file, ofs, page_read_bytes, page_zero_bytes, writable);
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
   return true;
 }
@@ -488,16 +478,17 @@ static bool
 setup_stack (void **esp, struct cmd *cmd)
 {
   uint8_t *kpage;
+  void *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frame_allocate (PAL_USER | PAL_ZERO, upage);
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      success = install_page (upage, kpage, true);
       if (success)
         build_esp(esp, cmd);
       else
-        palloc_free_page (kpage);
+        frame_free(kpage);
     }
 
 //  printf("\nhere!! name:%s\n", cmd->name);
@@ -515,7 +506,7 @@ setup_stack (void **esp, struct cmd *cmd)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
@@ -616,4 +607,16 @@ build_esp (void **esp, struct cmd *cmd)
     success = false;
     free(arg_addrs);
     return success;
+}
+
+struct process_control_block*
+create_pcb(int tid)
+{
+  struct process_control_block *pcb = (struct process_control_block *)malloc(sizeof(struct process_control_block));
+  pcb->exited = false;
+  pcb->waiting = false;
+  pcb->tid = tid;
+  lock_init(&pcb->lock);
+  sema_init(&pcb->sema, 0);
+  return pcb;
 }

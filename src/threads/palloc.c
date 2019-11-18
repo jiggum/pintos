@@ -148,6 +148,14 @@ palloc_free_page (void *page)
   palloc_free_multiple (page, 1);
 }
 
+void
+palloc_format (void* page, enum palloc_flags flags)
+{
+  ASSERT(page != NULL);
+  if (flags & PAL_ZERO)
+    memset (page, 0, PGSIZE);
+}
+
 /* Initializes pool P as starting at START and ending at END,
    naming it NAME for debugging purposes. */
 static void

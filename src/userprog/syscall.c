@@ -13,6 +13,8 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "lib/user/syscall.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
@@ -30,8 +32,10 @@ static int write_ (int fd, const void *buffer, unsigned size);
 static void seek_ (int fd, unsigned position);
 static unsigned tell_ (int fd);
 static void close_ (int fd);
-static void syscall_lock_acquire (void);
-static void syscall_lock_release (void);
+static mapid_t mmap_ (int fd, void *addr);
+static void munmap_ (mapid_t mapid);
+static int get_user (const uint8_t *uaddr);
+static bool validate_user(const uint8_t *uaddr);
 
 struct lock lock;
 
@@ -45,6 +49,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
+  thread_current()->esp = f->esp;
 //  printf ("system call : %d\n",*(uintptr_t *)f->esp);
 //  hex_dump((uintptr_t)f->esp, f->esp, 100, true);
   f->eax = syscall_switch(f);
@@ -71,6 +76,10 @@ get_syscall_argc(int syscall)
     case SYS_READ:
     case SYS_WRITE:
       return 3;
+    case SYS_MMAP:
+      return 2;
+    case SYS_MUNMAP:
+      return 1;
     default:
       return -1;
   }
@@ -101,33 +110,35 @@ syscall_switch (struct intr_frame *f)
       syscall_exit (*(int *)arg[0]);
       break;
     case SYS_EXEC:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return exec_(*(char **)arg[0]);
     case SYS_WAIT:
       return wait_(*(pid_t *)arg[0]);
     case SYS_CREATE:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return create_(
         *(char **)arg[0],
         *(unsigned int *)arg[1]
       );
     case SYS_REMOVE:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return remove_(*(char **)arg[0]);
     case SYS_OPEN:
-      validate_addr(*(char **)arg[0], sizeof(char *));
+      validate_user(*(uint8_t **)arg[0]);
       return open_(*(char **)arg[0]);
     case SYS_FILESIZE:
       return filesize_(*(int *)arg[0]);
     case SYS_READ:
-      validate_addr(*(void **)arg[1], sizeof(void *));
+      validate_user(*(uint8_t **)arg[1]);
+      validate_user(*(uint8_t **)arg[1] + *(unsigned int *)arg[2] - 1);
       return read_(
         *(int *)arg[0],
         *(void **)arg[1],
         *(unsigned int *)arg[2]
       );
     case SYS_WRITE:
-      validate_addr(*(void **)arg[1], sizeof(void *));
+      validate_user(*(uint8_t **)arg[1]);
+      validate_user(*(uint8_t **)arg[1] + *(unsigned int *)arg[2] - 1);
       return write_(
         *(int *)arg[0],
         *(void **)arg[1],
@@ -144,6 +155,14 @@ syscall_switch (struct intr_frame *f)
     case SYS_CLOSE:
       close_(*(int *)arg[0]);
       break;
+    case SYS_MMAP:
+      return mmap_(
+        *(int *)arg[0],
+        *(void **)arg[1]
+      );
+    case SYS_MUNMAP:
+      munmap_(*(mapid_t *)arg[0]);
+      break;
     default:
       break;
   }
@@ -153,12 +172,7 @@ syscall_switch (struct intr_frame *f)
 static void
 validate_addr(const void *addr, size_t size) {
   const void *addr_last_byte = addr + size - 1;
-  if (
-    !is_user_vaddr(addr) ||
-    !is_user_vaddr(addr_last_byte) ||
-    !pagedir_get_page(thread_current()->pagedir, addr) ||
-    !pagedir_get_page(thread_current()->pagedir, addr_last_byte)
-  ) syscall_exit(-1);
+  if (validate_user(addr)) validate_user(addr_last_byte);
 }
 
 static void
@@ -178,14 +192,16 @@ exec_ (const char *cmd_line)
     !cmd_init(cmd, cmd_line) ||
     !filesys_lookup(cmd->name)
   ) {
+    syscall_lock_release();
     res = -1;
     goto done;
+  } else {
+    syscall_lock_release();
   }
   res = process_execute(cmd_line);
 
   done:
     free_cmd (cmd);
-    syscall_lock_release();
     return res;
 }
 
@@ -195,11 +211,6 @@ syscall_exit (int status) {
 
   printf("%s: exit(%d)\n",thread_name(), status);
   cur->pcb->exit_status = status;
-
-  lock_acquire(&cur->pcb->lock);
-  cur->pcb->exited = true;
-  if (cur->pcb->waiting) sema_up(&cur->parent->parent_sema);
-  lock_release(&cur->pcb->lock);
 
   thread_exit ();
 }
@@ -213,13 +224,19 @@ wait_ (pid_t pid)
 static bool
 create_ (const char *file, unsigned initial_size)
 {
-  return filesys_create(file, initial_size);
+  syscall_lock_acquire();
+  bool res = filesys_create(file, initial_size);
+  syscall_lock_release();
+  return res;
 }
 
 static bool
 remove_ (const char *file)
 {
-  return filesys_remove(file);
+  syscall_lock_acquire();
+  bool res = filesys_remove(file);
+  syscall_lock_release();
+  return res;
 }
 
 static int
@@ -229,7 +246,7 @@ open_ (const char *file)
   struct thread *cur = thread_current ();
   struct file* file_ = filesys_open(file);
   if (file_ == NULL) goto error;
-  struct file_descriptor *file_d = malloc(sizeof(*file_d));
+  struct file_descriptor *file_d = malloc(sizeof(struct file_descriptor));
 
   file_descriptor_init(file_d, file_, get_next_fd(cur));
   list_insert_ordered(&cur->file_descriptors, &file_d -> elem, compare_fd_less, NULL);
@@ -244,8 +261,11 @@ open_ (const char *file)
 static int
 filesize_ (int fd)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  return file_length(file_d->file);
+  off_t res = file_length(file_d->file);
+  syscall_lock_release();
+  return res;
 }
 
 static int
@@ -253,6 +273,8 @@ read_ (int fd, void *buffer, unsigned size)
 {
   int res;
   syscall_lock_acquire();
+  frames_preload(buffer, size);
+  frames_set_pinned(buffer, size, true);
   if (fd == 0) {
     unsigned i;
     for(i = 0; i < size; i++) {
@@ -269,6 +291,7 @@ read_ (int fd, void *buffer, unsigned size)
   }
 
   done:
+    frames_set_pinned(buffer, size, false);
     syscall_lock_release();
     return res;
 }
@@ -301,35 +324,121 @@ write_ (int fd, const void *buffer, unsigned size) {
 static void
 seek_ (int fd, unsigned position)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
   file_seek(file_d->file, position);
+  syscall_lock_release();
 }
 
 static unsigned
 tell_ (int fd)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  return file_tell(file_d->file);
+  int res = file_tell(file_d->file);
+  syscall_lock_release();
+  return res;
 }
 
 static void
 close_ (int fd)
 {
+  syscall_lock_acquire();
   struct file_descriptor *file_d = get_file_descriptor(fd);
-  if (file_d == NULL) return;
+  if (file_d == NULL) {
+    syscall_lock_release();
+    return;
+  }
   file_close(file_d->file);
   list_remove(&file_d->elem);
   free(file_d);
+  syscall_lock_release();
+}
+
+static mapid_t
+mmap_ (int fd, void *addr)
+{
+  syscall_lock_acquire();
+  void* upage;
+  if (
+    fd == 0 ||
+    fd == 1 ||
+    addr == NULL ||
+    pg_ofs(addr) != 0
+  ) goto error;
+  struct file_descriptor *file_d = get_file_descriptor(fd);
+  if (file_d == NULL) goto error;
+  off_t file_size = file_length(file_d->file);
+  struct thread *cur = thread_current ();
+  for (off_t ofs = 0; ofs < file_size; ofs += PGSIZE) {
+    upage = addr + ofs;
+    if (
+      pagedir_get_page(cur->pagedir, upage) != NULL ||
+      page_table_find(&cur->page_table, upage) != NULL
+    ) goto error;
+  }
+  struct file *file = file_reopen(file_d->file);
+  struct mmap_descriptor *mmap_d = malloc(sizeof(struct mmap_descriptor));
+  mmap_descriptor_init(mmap_d, get_next_md(cur), file);
+  for (off_t ofs = 0; ofs < file_size; ofs += PGSIZE) {
+    uint32_t page_read_bytes = file_size - ofs > PGSIZE ? PGSIZE : file_size - ofs;
+    uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+    upage = addr + ofs;
+    struct page_table_entry* pte = page_table_append(&cur->page_table, upage);
+    page_file_map(pte, file, ofs, page_read_bytes, page_zero_bytes, true);
+    list_push_back (&mmap_d->ptes, &pte->md_elem);
+  }
+
+  list_insert_ordered(&cur->mmap_descriptors, &mmap_d->elem, compare_md_less, NULL);
+  syscall_lock_release();
+  return mmap_d->md;
+
+  error:
+    syscall_lock_release();
+    return -1;
 }
 
 static void
+munmap_ (mapid_t mapid)
+{
+  syscall_lock_acquire();
+  struct mmap_descriptor *mmap_d = get_mmap_descriptor(mapid);
+  ASSERT(mmap_d != NULL);
+  free_mmap_descriptor(mmap_d);
+  syscall_lock_release();
+}
+
+void
 syscall_lock_acquire (void)
 {
   lock_acquire(&lock);
 }
 
-static void
+void
 syscall_lock_release (void)
 {
   lock_release(&lock);
+}
+
+// pintod doc's 3.1.5
+/* Reads a byte at user virtual address UADDR.
+UADDR must be below PHYS_BASE.
+Returns the byte value if successful, -1 if a segfault
+occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+  int result;
+  asm ("movl $1f, %0; movzbl %1, %0; 1:"
+  : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+
+static bool
+validate_user(const uint8_t *uaddr) {
+  if ((void*)uaddr >= PHYS_BASE || get_user(uaddr) == -1) {
+    syscall_exit(-1);
+    return false;
+  }
+  return true;
 }

@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include "threads/synch.h"
 #include "filesys/file.h"
+#include "lib/kernel/hash.h"
+#include "userprog/process.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -27,16 +29,6 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 #define EMPTY_PRIORITY -1
-
-struct process_control_block
-{
-  int exit_status;
-  bool waiting;
-  bool exited;
-  tid_t tid;
-  struct list_elem elem;
-  struct lock lock;
-};
 
 /* A kernel thread or user process.
 
@@ -115,14 +107,15 @@ struct thread
 
     struct list childs;
     struct thread *parent;
-    struct semaphore child_sema;
-    struct semaphore parent_sema;
     struct semaphore execute_sema;
 
     struct list file_descriptors;
+    struct list mmap_descriptors;
     struct file *file;
     bool load_success;
     struct process_control_block *pcb;
+    void *esp;
+    struct hash page_table;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -179,9 +172,12 @@ void print_thread_list(struct list *list);
 void rollback_priority (void);
 
 int get_next_fd (struct thread *t);
-
 struct file_descriptor* get_file_descriptor(int fd);
+void free_file_descriptors(void);
 
-void free_file_descriptors();
+int get_next_md (struct thread *t);
+struct mmap_descriptor* get_mmap_descriptor(mapid_t md);
+struct list_elem* free_mmap_descriptor(struct mmap_descriptor *mmap_d);
+void free_mmap_descriptors(void);
 
 #endif /* threads/thread.h */
