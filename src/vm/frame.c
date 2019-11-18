@@ -78,7 +78,9 @@ frame_allocate(enum palloc_flags flags, void* upage)
     struct frame_table_entry *evict_frame = get_next_evict_frame();
     pagedir_clear_page(evict_frame->thread->pagedir, evict_frame->upage);
     struct page_table_entry* pte = page_table_append(&evict_frame->thread->page_table, evict_frame->upage);
-    pte->swap_slot = swap_out(evict_frame->ppage);
+    // page_table_append return old pte if that has same upage.
+    // swap_out not need to be called if the old pte's state is PAGE_FILE and readonly
+    if (pte->state != PAGE_FILE || pte->file_writable) swap_out(pte, evict_frame->ppage);
     fte = frame_find(evict_frame->ppage);
     frame_update(fte, upage, cur, false);
     ppage = fte->ppage;
@@ -176,17 +178,25 @@ frames_set_pinned(void *buffer, size_t size, bool pinned)
 bool
 frame_load(void *upage)
 {
+  bool writable = true;
   struct thread *cur = thread_current ();
   struct page_table_entry *pte = page_table_find(&cur->page_table, upage);
   if(pte == NULL) goto FAIL;
   void *ppage = frame_allocate(PAL_USER, upage);
   if(ppage == NULL) PANIC ("frame_allocate returned null");
-  if (pte->swap_slot != (size_t)EMPTY_SWAP_SLOT) {
-    swap_in(ppage, pte->swap_slot);
-    pte->swap_slot = EMPTY_SWAP_SLOT;
+  switch (pte->state) {
+    case PAGE_SWAP:
+      swap_in(pte, ppage);
+      break;
+    case PAGE_FILE:
+      page_file_load(pte, ppage);
+      writable = pte->file_writable;
+      break;
+    default:
+      break;
   }
-  if(!install_page(pte->upage, ppage, true)) PANIC ("pagedir_set_page returned false");
-  page_table_remove(&cur->page_table, pte);
+  if(!install_page(pte->upage, ppage, writable)) PANIC ("pagedir_set_page returned false");
+  if (pte->state != PAGE_FILE) page_table_remove(&cur->page_table, pte);
   return true;
 
   FAIL:

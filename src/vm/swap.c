@@ -13,7 +13,7 @@ size_t SECTOR_NUM_PER_PAGE = PGSIZE / BLOCK_SECTOR_SIZE;
 static void swap_slot_write(const void *buffer, size_t swap_slot);
 static void swap_slot_read(void *buffer, size_t swap_slot);
 
-struct lock swap_lock;
+static struct lock swap_lock;
 
 void
 swap_init(void)
@@ -26,32 +26,34 @@ swap_init(void)
   lock_init(&swap_lock);
 }
 
-size_t
-swap_out(void *buffer)
+void
+swap_out(struct page_table_entry *pte, void *buffer)
 {
   lock_acquire(&swap_lock);
   size_t swap_slot = bitmap_scan(swap_slot_usage, 0, 1, false);
   ASSERT(!bitmap_test(swap_slot_usage, swap_slot));
   swap_slot_write(buffer, swap_slot);
   bitmap_set(swap_slot_usage, swap_slot, true);
+  pte->swap_slot = swap_slot;
+  pte->state = PAGE_SWAP;
   lock_release(&swap_lock);
-  return swap_slot;
 }
 
 void
-swap_in(void *buffer, size_t swap_slot)
+swap_in(struct page_table_entry *pte, void *buffer)
 {
   lock_acquire(&swap_lock);
-  ASSERT(bitmap_test(swap_slot_usage, swap_slot));
-  swap_slot_read(buffer, swap_slot);
-  bitmap_set(swap_slot_usage, swap_slot, false);
+  ASSERT(bitmap_test(swap_slot_usage, pte->swap_slot));
+  swap_slot_read(buffer, pte->swap_slot);
+  bitmap_set(swap_slot_usage, pte->swap_slot, false);
+  pte->state = PAGE_EMPTY;
   lock_release(&swap_lock);
 }
 
 void
-swap_free(size_t swap_slot)
+swap_free(struct page_table_entry *pte)
 {
-  bitmap_set(swap_slot_usage, swap_slot, false);
+  bitmap_set(swap_slot_usage, pte->swap_slot, false);
 }
 
 static void

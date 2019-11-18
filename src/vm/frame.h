@@ -4,7 +4,6 @@
 #include "threads/palloc.h"
 #include "userprog/pagedir.h"
 #include "threads/thread.h"
-#endif
 
 struct frame_table_entry {
   void *upage;
@@ -23,3 +22,5 @@ void frames_set_pinned(void *addr, size_t size, bool pinned);
 bool frame_load(void *upage);
 
 struct lock frame_lock;
+
+#endif

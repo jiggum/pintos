@@ -1,10 +1,9 @@
 #include <debug.h>
-#include <stdio.h>
+#include <string.h>
 #include "vm/page.h"
 #include "vm/swap.h"
 #include "lib/kernel/hash.h"
 #include "threads/malloc.h"
-#include "threads/vaddr.h"
 #include "vm/frame.h"
 
 static unsigned hash_func(const struct hash_elem *e, void *aux);
@@ -30,8 +29,12 @@ destroy_func(struct hash_elem *elem, void *aux UNUSED)
 {
   struct page_table_entry *pte = hash_entry(elem, struct page_table_entry, elem);
 
-  if (pte->swap_slot == (size_t)EMPTY_SWAP_SLOT) {
-    swap_free(pte->swap_slot);
+  switch (pte->state) {
+    case PAGE_SWAP:
+      swap_free(pte);
+      break;
+    default:
+      break;
   }
 
   free(pte);
@@ -62,7 +65,7 @@ page_table_append(struct hash *page_table, void *upage)
 {
   struct page_table_entry *pte = malloc(sizeof(struct page_table_entry));
   pte->upage = upage;
-  pte->swap_slot = EMPTY_SWAP_SLOT;
+  pte->state = PAGE_EMPTY;
   struct hash_elem *old = hash_insert(page_table, &pte->elem);
   if (old != NULL) {
     free(pte);
@@ -80,4 +83,23 @@ page_table_find(struct hash* page_table, void *upage)
   elem = hash_find(page_table, &pte_query.elem);
   if (elem == NULL) return NULL;
   return hash_entry(elem, struct page_table_entry, elem);
+}
+
+void
+page_file_map(struct page_table_entry *pte, struct file *file, off_t file_ofs, uint32_t file_read_bytes, uint32_t file_zeroy_bytes, bool file_writable)
+{
+  pte->file = file;
+  pte->file_ofs = file_ofs;
+  pte->file_read_bytes = file_read_bytes;
+  pte->file_zeroy_bytes = file_zeroy_bytes;
+  pte->file_writable = file_writable;
+  pte->state = PAGE_FILE;
+}
+
+void
+page_file_load(struct page_table_entry *pte, void *buffer)
+{
+  file_seek (pte->file, pte->file_ofs);
+  file_read (pte->file, buffer, pte->file_read_bytes);
+  memset (buffer + pte->file_read_bytes, 0, pte->file_zeroy_bytes);
 }

@@ -256,10 +256,10 @@ filesize_ (int fd)
 static int
 read_ (int fd, void *buffer, unsigned size)
 {
-  frames_preload(buffer, size);
-  frames_set_pinned(buffer, size, true);
   int res;
   syscall_lock_acquire();
+  frames_preload(buffer, size);
+  frames_set_pinned(buffer, size, true);
   if (fd == 0) {
     unsigned i;
     for(i = 0; i < size; i++) {
@@ -276,8 +276,8 @@ read_ (int fd, void *buffer, unsigned size)
   }
 
   done:
-    syscall_lock_release();
     frames_set_pinned(buffer, size, false);
+    syscall_lock_release();
     return res;
 }
 
