@@ -3,7 +3,11 @@
 
 #include "filesys/off_t.h"
 #include <stdbool.h>
+#include <debug.h>
 #include "lib/kernel/list.h"
+#include "vm/page.h"
+
+typedef int mapid_t;
 
 struct inode;
 
@@ -35,8 +39,18 @@ struct file_descriptor
   struct list_elem elem;
 };
 
-void file_descriptor_init(struct file_descriptor *file_d, struct file *file, int fd);
+struct mmap_descriptor
+{
+  mapid_t md;
+  struct file *file;
+  struct list_elem elem;
+  struct list ptes;
+};
 
+void file_descriptor_init(struct file_descriptor *file_d, struct file *file, int fd);
 bool compare_fd_less (const struct list_elem *left, const struct list_elem *right, void *aux);
+
+void mmap_descriptor_init(struct mmap_descriptor *mmap_d, int md, struct file *file);
+bool compare_md_less (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED);
 
 #endif /* filesys/file.h */

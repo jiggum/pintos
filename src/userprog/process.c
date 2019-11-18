@@ -150,6 +150,7 @@ process_exit (void)
   uint32_t *pd;
 
   file_close (cur->file);
+  free_mmap_descriptors();
   free_file_descriptors();
 
   lock_acquire(&cur->pcb->lock);

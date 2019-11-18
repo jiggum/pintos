@@ -4,6 +4,7 @@
 #include "vm/swap.h"
 #include "lib/kernel/hash.h"
 #include "threads/malloc.h"
+#include "threads/vaddr.h"
 #include "vm/frame.h"
 
 static unsigned hash_func(const struct hash_elem *e, void *aux);
@@ -86,14 +87,40 @@ page_table_find(struct hash* page_table, void *upage)
 }
 
 void
-page_file_map(struct page_table_entry *pte, struct file *file, off_t file_ofs, uint32_t file_read_bytes, uint32_t file_zeroy_bytes, bool file_writable)
+page_file_map(struct page_table_entry *pte, struct file *file, off_t file_ofs, uint32_t file_read_bytes, uint32_t file_zero_bytes, bool file_writable)
 {
   pte->file = file;
   pte->file_ofs = file_ofs;
   pte->file_read_bytes = file_read_bytes;
-  pte->file_zeroy_bytes = file_zeroy_bytes;
+  pte->file_zero_bytes = file_zero_bytes;
   pte->file_writable = file_writable;
   pte->state = PAGE_FILE;
+}
+
+void
+page_file_unmap(struct page_table_entry *pte)
+{
+  ASSERT(pte->file != NULL);
+  void *ppage;
+  struct thread *cur = thread_current();
+  if (pte->swap_dirty || pagedir_is_dirty(cur->pagedir, pte->upage)) {
+    off_t size = file_length(pte->file) - pte->file_ofs;
+    if (size > PGSIZE) size = PGSIZE;
+    file_write_at(pte->file, pte->upage, size, pte->file_ofs);
+  }
+  switch(pte->state) {
+    case PAGE_SWAP:
+      swap_free(pte);
+      break;
+    case PAGE_FILE:
+      ppage = pagedir_get_page(cur->pagedir, pte->upage);
+      pagedir_clear_page(cur->pagedir, pte->upage);
+      frame_free(ppage);
+      break;
+    default:
+      PANIC("page_file_unmap: invalid pte state");
+  }
+  page_table_remove(&cur->page_table, pte);
 }
 
 void
@@ -101,5 +128,5 @@ page_file_load(struct page_table_entry *pte, void *buffer)
 {
   file_seek (pte->file, pte->file_ofs);
   file_read (pte->file, buffer, pte->file_read_bytes);
-  memset (buffer + pte->file_read_bytes, 0, pte->file_zeroy_bytes);
+  memset (buffer + pte->file_read_bytes, 0, pte->file_zero_bytes);
 }

@@ -110,6 +110,7 @@ struct thread
     struct semaphore execute_sema;
 
     struct list file_descriptors;
+    struct list mmap_descriptors;
     struct file *file;
     bool load_success;
     struct process_control_block *pcb;
@@ -171,9 +172,12 @@ void print_thread_list(struct list *list);
 void rollback_priority (void);
 
 int get_next_fd (struct thread *t);
-
 struct file_descriptor* get_file_descriptor(int fd);
-
 void free_file_descriptors(void);
+
+int get_next_md (struct thread *t);
+struct mmap_descriptor* get_mmap_descriptor(mapid_t md);
+struct list_elem* free_mmap_descriptor(struct mmap_descriptor *mmap_d);
+void free_mmap_descriptors(void);
 
 #endif /* threads/thread.h */

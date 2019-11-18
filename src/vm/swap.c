@@ -3,6 +3,7 @@
 #include "threads/vaddr.h"
 #include "lib/kernel/bitmap.h"
 #include "threads/synch.h"
+#include "userprog/pagedir.h"
 #include "vm/swap.h"
 
 static struct block *swap_block;
@@ -27,7 +28,7 @@ swap_init(void)
 }
 
 void
-swap_out(struct page_table_entry *pte, void *buffer)
+swap_out(struct page_table_entry *pte, void *buffer, uint32_t *pd)
 {
   lock_acquire(&swap_lock);
   size_t swap_slot = bitmap_scan(swap_slot_usage, 0, 1, false);
@@ -35,18 +36,20 @@ swap_out(struct page_table_entry *pte, void *buffer)
   swap_slot_write(buffer, swap_slot);
   bitmap_set(swap_slot_usage, swap_slot, true);
   pte->swap_slot = swap_slot;
+  pte->swap_dirty = pagedir_is_dirty(pd, pte->upage);
   pte->state = PAGE_SWAP;
   lock_release(&swap_lock);
 }
 
 void
-swap_in(struct page_table_entry *pte, void *buffer)
+swap_in(struct page_table_entry *pte, void *buffer, uint32_t *pd)
 {
   lock_acquire(&swap_lock);
   ASSERT(bitmap_test(swap_slot_usage, pte->swap_slot));
   swap_slot_read(buffer, pte->swap_slot);
-  bitmap_set(swap_slot_usage, pte->swap_slot, false);
+  swap_free(pte);
   pte->state = PAGE_EMPTY;
+  pagedir_set_dirty(pd, pte->upage, pte->swap_dirty);
   lock_release(&swap_lock);
 }
 

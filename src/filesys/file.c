@@ -3,6 +3,7 @@
 #include "filesys/inode.h"
 #include "threads/malloc.h"
 #include "lib/kernel/list.h"
+#include "vm/page.h"
 
 /* An open file. */
 struct file 
@@ -180,4 +181,19 @@ compare_fd_less (const struct list_elem *left, const struct list_elem *right, vo
   const struct file_descriptor *file_d_l = list_entry(left, struct file_descriptor, elem);
   const struct file_descriptor *file_d_r = list_entry(right, struct file_descriptor, elem);
   return file_d_l -> fd < file_d_r -> fd;
+}
+
+void
+mmap_descriptor_init(struct mmap_descriptor *mmap_d, int md, struct file *file)
+{
+  mmap_d->md = md;
+  mmap_d->file = file;
+  list_init(&mmap_d->ptes);
+}
+
+bool
+compare_md_less (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED){
+  const struct mmap_descriptor *mmap_d_l = list_entry(left, struct mmap_descriptor, elem);
+  const struct mmap_descriptor *mmap_d_r = list_entry(right, struct mmap_descriptor, elem);
+  return mmap_d_l->md < mmap_d_r->md;
 }

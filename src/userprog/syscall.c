@@ -14,6 +14,7 @@
 #include "filesys/file.h"
 #include "lib/user/syscall.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_syscall_argc(int syscall);
@@ -31,6 +32,8 @@ static int write_ (int fd, const void *buffer, unsigned size);
 static void seek_ (int fd, unsigned position);
 static unsigned tell_ (int fd);
 static void close_ (int fd);
+static mapid_t mmap_ (int fd, void *addr);
+static void munmap_ (mapid_t mapid);
 static int get_user (const uint8_t *uaddr);
 static bool validate_user(const uint8_t *uaddr);
 
@@ -73,6 +76,10 @@ get_syscall_argc(int syscall)
     case SYS_READ:
     case SYS_WRITE:
       return 3;
+    case SYS_MMAP:
+      return 2;
+    case SYS_MUNMAP:
+      return 1;
     default:
       return -1;
   }
@@ -147,6 +154,14 @@ syscall_switch (struct intr_frame *f)
       return tell_(*(int *)arg[0]);
     case SYS_CLOSE:
       close_(*(int *)arg[0]);
+      break;
+    case SYS_MMAP:
+      return mmap_(
+        *(int *)arg[0],
+        *(void **)arg[1]
+      );
+    case SYS_MUNMAP:
+      munmap_(*(mapid_t *)arg[0]);
       break;
     default:
       break;
@@ -231,7 +246,7 @@ open_ (const char *file)
   struct thread *cur = thread_current ();
   struct file* file_ = filesys_open(file);
   if (file_ == NULL) goto error;
-  struct file_descriptor *file_d = malloc(sizeof(*file_d));
+  struct file_descriptor *file_d = malloc(sizeof(struct file_descriptor));
 
   file_descriptor_init(file_d, file_, get_next_fd(cur));
   list_insert_ordered(&cur->file_descriptors, &file_d -> elem, compare_fd_less, NULL);
@@ -337,6 +352,45 @@ close_ (int fd)
   file_close(file_d->file);
   list_remove(&file_d->elem);
   free(file_d);
+  syscall_lock_release();
+}
+
+static mapid_t
+mmap_ (int fd, void *addr)
+{
+  syscall_lock_acquire();
+  struct file_descriptor *file_d = get_file_descriptor(fd);
+  if (file_d == NULL) goto error;
+  struct file *file = file_reopen(file_d->file);
+  struct thread *cur = thread_current ();
+  struct mmap_descriptor *mmap_d = malloc(sizeof(struct mmap_descriptor));
+  mmap_descriptor_init(mmap_d, get_next_md(cur), file);
+  off_t file_size = file_length(file);
+  for (off_t ofs = 0; ofs < file_size; ofs += PGSIZE) {
+    uint32_t page_read_bytes = file_size - ofs > PGSIZE ? PGSIZE : file_size - ofs;
+    uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+    void* upage = addr + ofs;
+    struct page_table_entry* pte = page_table_append(&thread_current()->page_table, upage);
+    page_file_map(pte, file, ofs, page_read_bytes, page_zero_bytes, true);
+    list_push_back (&mmap_d->ptes, &pte->md_elem);
+  }
+
+  list_insert_ordered(&cur->mmap_descriptors, &mmap_d->elem, compare_md_less, NULL);
+  syscall_lock_release();
+  return mmap_d->md;
+
+  error:
+    syscall_lock_release();
+    return -1;
+}
+
+static void
+munmap_ (mapid_t mapid)
+{
+  syscall_lock_acquire();
+  struct mmap_descriptor *mmap_d = get_mmap_descriptor(mapid);
+  ASSERT(mmap_d != NULL);
+  free_mmap_descriptor(mmap_d);
   syscall_lock_release();
 }
 
