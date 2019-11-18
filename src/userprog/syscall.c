@@ -359,18 +359,32 @@ static mapid_t
 mmap_ (int fd, void *addr)
 {
   syscall_lock_acquire();
+  void* upage;
+  if (
+    fd == 0 ||
+    fd == 1 ||
+    addr == NULL ||
+    pg_ofs(addr) != 0
+  ) goto error;
   struct file_descriptor *file_d = get_file_descriptor(fd);
   if (file_d == NULL) goto error;
-  struct file *file = file_reopen(file_d->file);
+  off_t file_size = file_length(file_d->file);
   struct thread *cur = thread_current ();
+  for (off_t ofs = 0; ofs < file_size; ofs += PGSIZE) {
+    upage = addr + ofs;
+    if (
+      pagedir_get_page(cur->pagedir, upage) != NULL ||
+      page_table_find(&cur->page_table, upage) != NULL
+    ) goto error;
+  }
+  struct file *file = file_reopen(file_d->file);
   struct mmap_descriptor *mmap_d = malloc(sizeof(struct mmap_descriptor));
   mmap_descriptor_init(mmap_d, get_next_md(cur), file);
-  off_t file_size = file_length(file);
   for (off_t ofs = 0; ofs < file_size; ofs += PGSIZE) {
     uint32_t page_read_bytes = file_size - ofs > PGSIZE ? PGSIZE : file_size - ofs;
     uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
-    void* upage = addr + ofs;
-    struct page_table_entry* pte = page_table_append(&thread_current()->page_table, upage);
+    upage = addr + ofs;
+    struct page_table_entry* pte = page_table_append(&cur->page_table, upage);
     page_file_map(pte, file, ofs, page_read_bytes, page_zero_bytes, true);
     list_push_back (&mmap_d->ptes, &pte->md_elem);
   }
