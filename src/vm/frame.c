@@ -150,8 +150,7 @@ frames_preload(void *buffer, size_t size)
   {
     ppage = pagedir_get_page(pd, upage);
     if (ppage == NULL) {
-      page_table_append(&thread_current()->page_table, upage);
-      frame_load(upage);
+      frame_load(upage, true);
     }
   }
 }
@@ -176,10 +175,12 @@ frames_set_pinned(void *buffer, size_t size, bool pinned)
 }
 
 bool
-frame_load(void *upage)
+frame_load(void *upage, bool create)
 {
   struct thread *cur = thread_current ();
-  struct page_table_entry *pte = page_table_find(&cur->page_table, upage);
+  struct page_table_entry *pte = create ?
+    page_table_append(&cur->page_table, upage) :
+    page_table_find(&cur->page_table, upage);
   if(pte == NULL) goto FAIL;
   void *ppage = frame_allocate(PAL_USER, upage);
   if(ppage == NULL) PANIC ("frame_allocate returned null");

@@ -162,13 +162,10 @@ page_fault (struct intr_frame *f)
   ) {
     void* upage = pg_round_down(fault_addr);
     void* esp = user ? f->esp : cur->esp;
-    if (
+    bool create_page =
       (fault_addr == esp - 4 || fault_addr == esp - 32 || esp <= fault_addr) &&
-      (fault_addr < PHYS_BASE && (unsigned long)(PHYS_BASE - fault_addr) <= 8 * 1024 * 1024)
-    ) {
-      page_table_append(&cur->page_table, upage);
-    }
-    if (frame_load(upage)) return;
+      ((unsigned long)(PHYS_BASE - fault_addr) <= 8 * 1024 * 1024);
+    if(frame_load(upage, create_page)) return;
   }
 
   syscall_exit (-1);
