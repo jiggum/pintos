@@ -19,7 +19,7 @@ void* frame_allocate(enum palloc_flags, void* upage);
 void frame_free(void *ppage);
 void frames_preload(void *buffer, size_t size);
 void frames_set_pinned(void *addr, size_t size, bool pinned);
-bool frame_load(void *upage);
+bool frame_load(void *upage, bool create);
 
 struct lock frame_lock;
 
